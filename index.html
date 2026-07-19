@@ -33,6 +33,13 @@
     }
     .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #1b2836; }
     .btn.active { background: #2ed573; color: #06331b; box-shadow: 0 2px 0 #1e9e52; }
+    #rotctl { position: fixed; bottom: 20px; right: 16px; display: none; gap: 12px; z-index: 5; }
+    .rbtn {
+      width: 62px; height: 62px; border-radius: 50%; border: none;
+      background: rgba(51,71,91,0.85); color: #fff; font-size: 30px; font-weight: bold;
+      cursor: pointer; touch-action: none; box-shadow: 0 3px 0 #1b2836;
+    }
+    .rbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #1b2836; }
     @media (max-width: 820px) {
       #title { font-size: 22px; }
       #hint { font-size: 13px; bottom: 10px; }
@@ -60,6 +67,10 @@
     <button id="needleBtn" class="btn">💉 NEEDLE</button>
     <button id="stickBtn" class="btn">🔗 STICK</button>
     <button id="cannibalBtn" class="btn">🩸 CANNIBALISM</button>
+  </div>
+  <div id="rotctl">
+    <button id="rotL" class="rbtn">↺</button>
+    <button id="rotR" class="rbtn">↻</button>
   </div>
 
   <script>
@@ -679,6 +690,32 @@
     }
     canvas.addEventListener("wheel", (e) => { e.preventDefault(); scrollAction(e.deltaY, e.clientX, e.clientY); }, { passive: false });
 
+    // on-screen rotate buttons (phone) — spin whatever you last touched, or the gun's aim / its held object
+    function rotateControl(dir) {
+      const step = 0.22 * dir;
+      if (held && held.kind === "gravgun") {
+        if (held.beamHold) held.beamHold.angle += step; else held.aim += step;
+        return;
+      }
+      let best = null, bestDist = 90;
+      for (const b of blocks) {
+        const d = Math.hypot(mouse.x - (b.x + b.w / 2), mouse.y - (b.y + b.h / 2));
+        if (d < bestDist) { bestDist = d; best = b; }
+      }
+      if (best) best.angle += step;
+    }
+    function holdRotate(btn, dir) {
+      let iv = null;
+      const start = (e) => { e.preventDefault(); rotateControl(dir); iv = iv || setInterval(() => rotateControl(dir), 60); };
+      const stop = () => { if (iv) { clearInterval(iv); iv = null; } };
+      btn.addEventListener("pointerdown", start);
+      btn.addEventListener("pointerup", stop);
+      btn.addEventListener("pointerleave", stop);
+      btn.addEventListener("pointercancel", stop);
+    }
+    holdRotate(document.getElementById("rotL"), -1);
+    holdRotate(document.getElementById("rotR"), 1);
+
     // ===== TOUCH CONTROLS (phone): hold for a tool radial, tap/drag to use, two fingers for beam/aim =====
     const RADIAL = [
       { icon: "💥", act: () => setMode("boom") },
@@ -750,7 +787,8 @@
     const isPhone = window.matchMedia("(pointer: coarse)").matches;
     if (isPhone) {
       document.getElementById("controls").style.display = "none";
-      document.getElementById("hint").textContent = "Tap to use • hold for the tool menu • two fingers = beam / aim";
+      document.getElementById("rotctl").style.display = "flex";
+      document.getElementById("hint").textContent = "Tap to use • hold for tools • ↺↻ to rotate • two fingers = beam";
     } else {
       document.getElementById("hint").textContent = "CLICK to use • pick a tool below • scroll to aim/tip • right-click = beam";
     }
