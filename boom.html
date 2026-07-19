@@ -1,0 +1,1187 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>World of Chaos</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #101820; overflow: hidden; }
+    canvas { display: block; touch-action: none; }
+    #title {
+      position: fixed; top: 12px; left: 0; right: 0; text-align: center;
+      color: #ffcf33; font-family: Arial, sans-serif; font-weight: bold;
+      font-size: 30px; letter-spacing: 2px; pointer-events: none;
+      text-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    }
+    #hint {
+      position: fixed; bottom: 16px; left: 0; right: 0;
+      text-align: center; color: #fff; font-family: Arial, sans-serif;
+      font-size: 20px; pointer-events: none; opacity: 0.85;
+    }
+    #tank {
+      position: fixed; top: 14px; right: 16px; color: #fff;
+      font-family: Arial, sans-serif; font-size: 20px; opacity: 0.9; pointer-events: none;
+    }
+    #controls {
+      position: fixed; top: 50px; left: 0; right: 0;
+      display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;
+    }
+    .btn {
+      font-size: 11px; padding: 6px 11px; border: none; border-radius: 8px;
+      background: #33475b; color: #fff; font-family: Arial, sans-serif; font-weight: bold;
+      cursor: pointer; box-shadow: 0 2px 0 #1b2836;
+    }
+    .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #1b2836; }
+    .btn.active { background: #2ed573; color: #06331b; box-shadow: 0 2px 0 #1e9e52; }
+    @media (max-width: 820px) {
+      #controls { display: none; }   /* on phones the hold-radial replaces the button row */
+      #title { font-size: 22px; }
+      #hint { font-size: 13px; bottom: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="title">🌪️ WORLD OF CHAOS 🌪️</div>
+  <div id="hint">Tap to use &nbsp;•&nbsp; hold for the tool menu &nbsp;•&nbsp; two fingers = beam / aim</div>
+  <canvas id="game"></canvas>
+  <div id="tank">🛢️ Tank: 0</div>
+  <div id="controls">
+    <button id="boomBtn" class="btn active">💥 BOOM</button>
+    <button id="grabBtn" class="btn">✋ GRAB</button>
+    <button id="goatBtn" class="btn">🐐 GOAT</button>
+    <button id="anvilBtn" class="btn">⚓ ANVIL</button>
+    <button id="planeBtn" class="btn">✈️ PLANE</button>
+    <button id="colaBtn" class="btn">🥤 COLA</button>
+    <button id="spongeBtn" class="btn">🧽 SPONGE</button>
+    <button id="entityBtn" class="btn">⬛ ENTITY</button>
+    <button id="gunBtn" class="btn">🔫 GRAV GUN</button>
+    <button id="squareBtn" class="btn">🟦 ADD SQUARE</button>
+    <button id="bucketBtn" class="btn">🪣 BUCKET</button>
+    <button id="vacBtn" class="btn">🌀 VACUUM</button>
+    <button id="needleBtn" class="btn">💉 NEEDLE</button>
+    <button id="stickBtn" class="btn">🔗 STICK</button>
+    <button id="cannibalBtn" class="btn">🩸 CANNIBALISM</button>
+  </div>
+
+  <script>
+    // ===== JAKE'S KNOBS — change these numbers and hit save! =====
+    const BLOCK_COUNT = 200;      // how many blocks in the tower
+    const EXPLOSION_POWER = 300;  // how hard the boom pushes
+    const GRAVITY = 0.1;          // how fast things fall
+    const BOUNCINESS = 0.1;       // how bouncy blocks are when they smack each other (0 = thud, 1 = super bouncy)
+    const STICK_STRENGTH = 0.3;   // how strong the glue is (0 = loose, 1 = rock solid)
+    const BREAK_DISTANCE = 90;    // how far a bond can stretch before it SNAPS (bigger = harder to break)
+    const BOOM_VOLUME = 0.6;      // how loud the boom is (0 = silent, 1 = full blast)
+    const POP_VOLUME = 0.5;       // how loud the little block-hit pops are
+    const POP_THRESHOLD = 2.5;    // how HARD blocks must smack to make a pop (higher = only big hits)
+    const SCREAMSPEED = 15;       // how fast a block must fly before it starts SCREAMING (higher = only crazy-fast)
+    const SCREAMPITCH = 800;      // how high the scream is (bigger number = higher, screechier)
+    const COLA_STICK_MAX = 4;     // how many things each sticky cola ball can grab at once
+    const VACUUM_POWER = 1;       // how hard the vacuum sucks things toward the nozzle
+    const VACUUM_RANGE = 260;     // how close things must be before the vacuum grabs them
+    const VACUUM_SWIRL = 1.2;     // how much sucked-up stuff swirls around as it goes in
+    const ENTITY_SPEED = 2;       // how fast the entity walks around hunting
+    // =============================================================
+
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const stickBtn = document.getElementById("stickBtn");
+    const boomBtn = document.getElementById("boomBtn");
+    const grabBtn = document.getElementById("grabBtn");
+    const goatBtn = document.getElementById("goatBtn");
+    const anvilBtn = document.getElementById("anvilBtn");
+    const planeBtn = document.getElementById("planeBtn");
+    const colaBtn = document.getElementById("colaBtn");
+    const spongeBtn = document.getElementById("spongeBtn");
+    const entityBtn = document.getElementById("entityBtn");
+    const gunBtn = document.getElementById("gunBtn");
+    const squareBtn = document.getElementById("squareBtn");
+    const bucketBtn = document.getElementById("bucketBtn");
+    const vacBtn = document.getElementById("vacBtn");
+    const needleBtn = document.getElementById("needleBtn");
+    const cannibalBtn = document.getElementById("cannibalBtn");
+    const tankEl = document.getElementById("tank");
+    const tankPos = { x: 90, y: null }; // where the vacuum bag sits (you can drag it)
+    let draggingTank = false;
+    const tankGrab = { dx: 0, dy: 0 };
+    let W, H;
+    function resize() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; if (tankPos.y === null) tankPos.y = H - 70; }
+    resize();
+    addEventListener("resize", resize);
+
+    const colors = ["#ff4757", "#ffa502", "#feca57", "#2ed573", "#1e90ff", "#a55eea"];
+    let blocks = [];
+    let bonds = [];      // the springy glue connections between blocks
+    let flames = [];     // little rising fire triangles
+    let sticky = false;  // are the blocks glued right now?
+    let shake = 0;
+    let mode = "boom";   // "boom" = click explodes, "grab" = drag a block, "spawn" = drop an object
+    let held = null;     // the block you're currently holding
+    let spawnKind = "goat"; // which object the spawn tool drops
+    let pointerDown = false; // is the LEFT mouse button held down right now?
+    let rightDown = false;   // is the RIGHT mouse button held down right now?
+    const tankColors = {};    // colors stored in the tank, like { "#ff4757": 3 }
+    let selectedColorIdx = 0; // which color the needle is loaded with (pick with number keys)
+    const INJECT_ORDER = ["#ff4757", "#ffa502", "#feca57", "#2ed573", "#1e90ff", "#a55eea", "#7f8c8d", "#5a3a1a"];
+    const WATER_COLOR = "#3aa0ff"; // the blue that water paints things
+    const LAVA_COLOR = "#ff4757";  // the red that lava paints things
+    const LAVA_DROP_COLORS = ["#ffa502", "#feca57", "#ff4757"]; // orange / yellow / red lava blobs
+    let bucketLiquid = "water";    // what the bucket pours: "water" or "lava"
+    let cannibalism = false;       // can entities eat each other?
+    const mouse = { x: 0, y: 0 };
+
+    // ===== SOUND — built out of pure math, no files needed =====
+    let audioCtx;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      return audioCtx;
+    }
+    function playBoom() {
+      const ac = getAudio();
+      const now = ac.currentTime;
+      const dur = 0.4;
+      const buffer = ac.createBuffer(1, Math.floor(ac.sampleRate * dur), ac.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1; // static/noise = the boom body
+      const noise = ac.createBufferSource();
+      noise.buffer = buffer;
+      const filter = ac.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(900, now);
+      filter.frequency.exponentialRampToValueAtTime(60, now + dur); // sweep down = that deep WHOOMP
+      const gain = ac.createGain();
+      gain.gain.setValueAtTime(BOOM_VOLUME, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      noise.connect(filter); filter.connect(gain); gain.connect(ac.destination);
+      noise.start(now); noise.stop(now + dur);
+    }
+    function playSnap() {
+      const ac = getAudio();
+      const now = ac.currentTime;
+      const osc = ac.createOscillator();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(1100, now);
+      osc.frequency.exponentialRampToValueAtTime(250, now + 0.08); // quick chirp = the glue cracking
+      const gain = ac.createGain();
+      gain.gain.setValueAtTime(BOOM_VOLUME * 0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.start(now); osc.stop(now + 0.08);
+    }
+    const MAX_POPS = 5; // most pops we'll allow in one frame, so pileups don't blast your ears
+    function playPop(strength) {
+      const ac = getAudio();
+      const now = ac.currentTime;
+      const osc = ac.createOscillator();
+      osc.type = "triangle";
+      const freq = 300 + Math.random() * 500; // random pitch so every pop sounds a little different
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.5, now + 0.06);
+      const gain = ac.createGain();
+      const vol = Math.min(1, strength / 12) * POP_VOLUME * 0.4; // harder hit = louder pop
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.start(now); osc.stop(now + 0.06);
+    }
+    // one long scream voice that rises when blocks fly fast and hushes when they settle
+    let screamOsc = null, screamGain = null;
+    function updateScream(maxSpeed) {
+      if (!audioCtx) return; // no sound until you've clicked at least once
+      if (!screamOsc) {
+        screamOsc = audioCtx.createOscillator();
+        screamOsc.type = "sawtooth";
+        screamGain = audioCtx.createGain();
+        screamGain.gain.value = 0;
+        screamOsc.connect(screamGain); screamGain.connect(audioCtx.destination);
+        screamOsc.start();
+      }
+      const now = audioCtx.currentTime;
+      if (maxSpeed > SCREAMSPEED) {
+        const pitch = SCREAMPITCH + (maxSpeed - SCREAMSPEED) * 15; // faster = higher scream
+        screamOsc.frequency.setTargetAtTime(pitch, now, 0.02);
+        screamGain.gain.setTargetAtTime(0.18 * BOOM_VOLUME, now, 0.02);
+      } else {
+        screamGain.gain.setTargetAtTime(0, now, 0.05); // quiet again when things slow down
+      }
+    }
+    // ===========================================================
+
+    function buildTower() {
+      blocks = [];
+      bonds = [];
+      flames = [];
+      sticky = false;
+      held = null;
+      stickBtn.textContent = "🔗 STICK";
+      const size = 40;
+      const cols = 5;
+      for (let i = 0; i < BLOCK_COUNT; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        blocks.push({
+          x: W / 2 - (cols * size) / 2 + col * size,
+          y: H - 60 - row * size,
+          w: size - 4,
+          h: size - 4,
+          vx: 0, vy: 0,
+          angle: 0, spin: 0,
+          color: colors[i % colors.length],
+          mass: 1, kind: "block", emoji: null,
+        });
+      }
+    }
+    buildTower();
+
+    // ADD SQUARE (hold the button): reset the map to a fresh tower, but keep the surviving entities
+    function resetKeepSurvivors() {
+      const survivors = blocks.filter(b => b.kind === "entity" && !b.dead);
+      buildTower(); // clears everything and builds a fresh tower
+      for (const e of survivors) { e.eating = []; blocks.push(e); } // drop the survivors back in
+    }
+    // ADD SQUARE (right-click the button): keep what's there, dump in a fresh batch of squares
+    function addSquares(n) {
+      const size = 36;
+      for (let i = 0; i < n; i++) {
+        blocks.push({
+          x: 40 + Math.random() * (W - 80), y: 40 + Math.random() * (H / 2),
+          w: size, h: size, vx: 0, vy: 0, angle: 0, spin: 0,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          mass: 1, kind: "block", emoji: null,
+        });
+      }
+    }
+
+    // drop a new object (a goat, an anvil, or a plain block) into the world
+    function addObject(x, y, kind) {
+      let w = 40, h = 40, mass = 1, emoji = null;
+      if (kind === "goat")  { w = 46; h = 46; mass = 2; emoji = "🐐"; }
+      if (kind === "anvil") { w = 52; h = 44; mass = 8; }        // anvil = super heavy
+      if (kind === "plane") { w = 60; h = 60; mass = 1.5; emoji = "✈️"; }
+      if (kind === "cola")  { w = 34; h = 54; mass = 2; }        // drawn as a can; tips over and fizzes
+      if (kind === "sponge") { w = 44; h = 34; mass = 1.5; emoji = "🧽"; } // soaks up liquids it touches
+      if (kind === "entity") { w = 40; h = 40; mass = 2; } // black square that grows writhing limbs when touched
+      if (kind === "gravgun") { w = 54; h = 26; mass = 2; } // HL2-style gravity gun you carry and fire
+      const obj = {
+        x: x - w / 2, y: y - h / 2, w, h,
+        vx: 0, vy: 0, angle: 0, spin: 0,
+        color: colors[Math.floor(Math.random() * colors.length)], mass, emoji, kind,
+      };
+      if (kind === "plane") obj.vx = 10;       // planes fly in!
+      if (kind === "cola") obj.popped = false; // hasn't fizzed yet
+      if (kind === "entity") { obj.activated = false; obj.growTimer = 0; obj.limbs = []; obj.eating = []; }
+      if (kind === "gravgun") { obj.aim = -Math.PI / 2; obj.angle = -Math.PI / 2; obj.beamHold = null; obj.beamDist = 120; }
+      blocks.push(obj);
+    }
+
+    // draw a little cartoon anvil shape (there's no anvil emoji, so we build one!)
+    function drawAnvil(w, h) {
+      ctx.fillStyle = "#3d4450";
+      ctx.fillRect(-w / 2, -h / 2, w, h * 0.32);          // top slab
+      ctx.beginPath();                                     // pointy horn on the left
+      ctx.moveTo(-w / 2, -h / 2);
+      ctx.lineTo(-w / 2 - w * 0.18, -h / 2 + h * 0.16);
+      ctx.lineTo(-w / 2, -h / 2 + h * 0.32);
+      ctx.closePath(); ctx.fill();
+      ctx.fillRect(-w * 0.16, -h / 2 + h * 0.32, w * 0.32, h * 0.36); // skinny waist
+      ctx.fillRect(-w / 2, h / 2 - h * 0.3, w, h * 0.3);   // wide base
+    }
+
+    // spray brown fizz-balls out of a tipped-over cola can
+    function popCola(can) {
+      can.popped = true;
+      const count = 15 + Math.floor(Math.random() * 6); // 15 to 20 drops
+      const cx = can.x + can.w / 2, cy = can.y + can.h / 2;
+      for (let i = 0; i < count; i++) {
+        const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.6; // spray upward-ish
+        const spd = 4 + Math.random() * 5;
+        blocks.push({
+          x: cx - 5, y: cy - 5, w: 10, h: 10,
+          vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+          angle: 0, spin: 0, color: "#5a3a1a", mass: 0.3,
+          emoji: null, kind: "coladrop",
+          stuck: [], // cola fizz stays until you sponge or vacuum it up
+        });
+      }
+    }
+
+    // a cola drop welds together everything it touches (stiff, block-to-block, stays until broken)
+    function stickTo(ball, other) {
+      if (other.kind === "coladrop") return;           // drops don't weld to each other
+      if (ball.stuck.length >= COLA_STICK_MAX) return; // this drop is already full
+      if (ball.stuck.includes(other)) return;          // already welded this one
+      // stiff-weld `other` to everything this drop already grabbed — like a Garry's Mod weld
+      for (const prev of ball.stuck) {
+        const dx = (other.x + other.w / 2) - (prev.x + prev.w / 2);
+        const dy = (other.y + other.h / 2) - (prev.y + prev.h / 2);
+        bonds.push({ a: prev, b: other, rest: Math.hypot(dx, dy), stiff: true });
+      }
+      ball.stuck.push(other);
+    }
+
+    // a liquid paints any blank (white) square it touches (water = blue, lava = red)
+    function paintBlank(liquid, o) {
+      if (o.kind === "block" && o.color === "#ffffff") {
+        o.color = (liquid.kind === "lava") ? LAVA_COLOR : WATER_COLOR;
+      }
+    }
+
+    // water puts out fire, and when it hits fire or lava it hardens into a gray stone block
+    function waterHitsFire(drop, other) {
+      if (other.kind === "lava" || other.fire > 0) {
+        if (other.fire > 0) other.fire = 0;      // extinguish the flames
+        drop.kind = "block"; drop.emoji = null;  // the water hardens...
+        drop.color = "#7f8c8d";                  // ...into gray stone
+        drop.w = 18; drop.h = 18; drop.mass = 1;
+      }
+    }
+
+    // lava sets things on fire; a burning thing puffs out rising flame triangles
+    function ignite(o) {
+      if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") return;
+      if (!o.fire) o.fire = 60 + Math.floor(Math.random() * 300); // burns 1 to 6 seconds
+    }
+    function spawnFlame(o) {
+      flames.push({
+        x: o.x + o.w / 2 + (Math.random() - 0.5) * o.w,
+        y: o.y + o.h / 2,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: -1 - Math.random() * 1.5,                // always drifts upward
+        size: 6 + Math.random() * 6,
+        life: 60 + Math.floor(Math.random() * 300),  // each triangle lasts 1 to 6 seconds
+        color: LAVA_DROP_COLORS[Math.floor(Math.random() * LAVA_DROP_COLORS.length)],
+      });
+    }
+
+    // draw a little red cola can
+    function drawCan(w, h) {
+      ctx.fillStyle = "#c8102e";
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(-w / 2, -h * 0.08, w, h * 0.16); // white band
+      ctx.fillStyle = "#9a0c22";
+      ctx.fillRect(-w / 2, -h / 2, w, h * 0.1);      // darker top
+    }
+
+    // the entity grows a new limb (a 4-joint arm or leg) — pattern: arm, arm, leg, leg, repeat
+    function addLimb(ent) {
+      const order = ["arm", "arm", "leg", "leg", "arm", "arm", "leg", "leg"];
+      const type = order[ent.limbs.length];
+      let dir;
+      if (type === "arm") {
+        const armCount = ent.limbs.filter(l => l.type === "arm").length;
+        const side = (armCount % 2 === 0) ? 1 : -1;
+        dir = (side > 0 ? 0 : Math.PI) - 0.3; // reach sideways, angled a little up
+      } else {
+        const legCount = ent.limbs.filter(l => l.type === "leg").length;
+        dir = Math.PI / 2 + (legCount - 1.5) * 0.35; // reach downward, spread out
+      }
+      ent.limbs.push({
+        ax: Math.cos(dir) * ent.w / 2,
+        ay: Math.sin(dir) * ent.h / 2,
+        dir, type,
+        len: (type === "leg" ? 20 : 16),
+      });
+    }
+
+    // draw an entity's writhing limbs — 4 joints each, shifting to random spots every frame
+    function drawEntityLimbs(ent) {
+      const cx = ent.x + ent.w / 2, cy = ent.y + ent.h / 2;
+      ctx.strokeStyle = "#3a3a3a"; ctx.lineWidth = 4; ctx.lineCap = "round";
+      for (const limb of ent.limbs) {
+        let px = cx + limb.ax, py = cy + limb.ay, ang = limb.dir;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        for (let s = 0; s < 4; s++) { // 4 joints per limb
+          ang += (Math.random() - 0.5) * 1.4; // always shift to a random position
+          px += Math.cos(ang) * limb.len;
+          py += Math.sin(ang) * limb.len;
+          ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+    }
+
+    // draw the vacuum tool: a tank on the ground with a hose running up to the nozzle at your cursor
+    function drawVacuum() {
+      const tx = tankPos.x, ty = tankPos.y;
+      const nx = mouse.x, ny = mouse.y;
+      // hose first, so the tank and nozzle sit on top of it
+      ctx.strokeStyle = "#7a7f88"; ctx.lineWidth = 9; ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(tx, ty - 28);
+      ctx.quadraticCurveTo((tx + nx) / 2, Math.max(ty, ny) + 50, nx, ny); // saggy hose
+      ctx.stroke();
+      // tank canister
+      ctx.fillStyle = "#2b3a4a";
+      ctx.fillRect(tx - 34, ty - 44, 68, 80);
+      ctx.fillStyle = "#4a6076";
+      ctx.fillRect(tx - 34, ty - 44, 68, 14);
+      ctx.fillStyle = "#fff";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "22px Arial"; ctx.fillText("🛢️", tx, ty - 4);
+      ctx.font = "16px Arial"; ctx.fillText(tankTotal(), tx, ty + 22);
+      // nozzle at the cursor
+      ctx.fillStyle = "#cfd6dd";
+      ctx.beginPath(); ctx.arc(nx, ny, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#555"; ctx.lineWidth = 3; ctx.stroke();
+    }
+
+    // ---- the tank stores COLORS now, and the needle injects them back out ----
+    function injectColorFor(o) {
+      if (o.kind === "cola") return "#ff4757";     // cola  -> red
+      if (o.kind === "plane") return "#1e90ff";    // plane -> blue
+      if (o.kind === "goat") return "#ffa502";     // goat  -> orange
+      if (o.kind === "anvil") return "#7f8c8d";    // anvil -> gray
+      if (o.kind === "coladrop") return "#5a3a1a"; // fizz  -> brown
+      return o.color;                              // a normal cube keeps its own color
+    }
+    function addToTank(c) { tankColors[c] = (tankColors[c] || 0) + 1; }
+    function tankTotal() { let s = 0; for (const c in tankColors) s += tankColors[c]; return s; }
+    function availableColors() { return INJECT_ORDER.filter(c => tankColors[c] > 0); }
+    function takeFromTank() {
+      const av = availableColors();
+      if (!av.length) return null;
+      const c = av[0];
+      if (--tankColors[c] <= 0) delete tankColors[c];
+      return c;
+    }
+    function updateTankDisplay() { tankEl.textContent = "🛢️ Tank: " + tankTotal(); }
+
+    // pop a little white square out of the top of the tank (shows the needle drew from it)
+    function ejectTankSquare() {
+      const tx = tankPos.x, ty = tankPos.y - 44;
+      blocks.push({
+        x: tx - 16, y: ty - 16, w: 32, h: 32,
+        vx: (Math.random() - 0.5) * 4, vy: -8 - Math.random() * 4,
+        angle: 0, spin: (Math.random() - 0.5) * 0.2,
+        color: "#ffffff", mass: 1, kind: "block", emoji: null,
+      });
+    }
+
+    // draw the needle tool: a syringe at the cursor, tubed to the tank, loaded with a picked color
+    function drawNeedle() {
+      const tx = tankPos.x, ty = tankPos.y, nx = mouse.x, ny = mouse.y;
+      const av = availableColors();
+      const c = av[selectedColorIdx] || null;
+      // tube from tank to syringe
+      ctx.strokeStyle = "#9aa3ad"; ctx.lineWidth = 6; ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(tx, ty - 28);
+      ctx.quadraticCurveTo((tx + nx) / 2, Math.max(ty, ny) + 50, nx, ny);
+      ctx.stroke();
+      // tank
+      ctx.fillStyle = "#2b3a4a"; ctx.fillRect(tx - 34, ty - 44, 68, 80);
+      ctx.fillStyle = "#4a6076"; ctx.fillRect(tx - 34, ty - 44, 68, 14);
+      ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "22px Arial"; ctx.fillText("🛢️", tx, ty - 4);
+      ctx.font = "16px Arial"; ctx.fillText(tankTotal(), tx, ty + 22);
+      // color choices with number labels (press the number to load that color)
+      for (let i = 0; i < av.length; i++) {
+        const sx = tx - 34 + i * 22, sy = ty - 74;
+        ctx.fillStyle = av[i]; ctx.fillRect(sx, sy, 18, 18);
+        if (i === selectedColorIdx) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.strokeRect(sx - 1, sy - 1, 20, 20); }
+        ctx.fillStyle = "#fff"; ctx.font = "11px Arial"; ctx.fillText(i + 1, sx + 9, sy + 28);
+      }
+      // syringe at the cursor, tinted with the loaded color
+      ctx.save();
+      ctx.translate(nx, ny);
+      ctx.fillStyle = c || "#cccccc";
+      ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#333"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = "#dddddd"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(0, 10); ctx.lineTo(0, 24); ctx.stroke();
+      ctx.restore();
+    }
+
+    // show which liquid the bucket is pouring
+    function drawBucket() {
+      const isLava = bucketLiquid === "lava";
+      ctx.fillStyle = isLava ? LAVA_COLOR : WATER_COLOR;
+      ctx.beginPath(); ctx.arc(mouse.x, mouse.y, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.font = "14px Arial"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText(isLava ? "🌋 LAVA — press 1 for water" : "💧 WATER — press 2 for lava", mouse.x + 16, mouse.y);
+    }
+
+    // glue every block to its close neighbors
+    function makeBonds() {
+      bonds = [];
+      const radius = 60; // only glue blocks that are close together
+      for (let i = 0; i < blocks.length; i++) {
+        for (let j = i + 1; j < blocks.length; j++) {
+          const a = blocks[i], b = blocks[j];
+          const dx = (b.x + b.w / 2) - (a.x + a.w / 2);
+          const dy = (b.y + b.h / 2) - (a.y + a.h / 2);
+          const dist = Math.hypot(dx, dy);
+          if (dist < radius) bonds.push({ a, b, rest: dist });
+        }
+      }
+      sticky = true;
+    }
+
+    function toggleStick() {
+      if (sticky) { bonds = []; sticky = false; stickBtn.textContent = "🔗 STICK"; }
+      else { makeBonds(); stickBtn.textContent = "✂️ UNSTICK"; }
+    }
+    stickBtn.addEventListener("click", toggleStick);
+
+    function setMode(m, kind) {
+      mode = m;
+      held = null;
+      if (kind) spawnKind = kind;
+      boomBtn.classList.toggle("active", m === "boom");
+      grabBtn.classList.toggle("active", m === "grab");
+      goatBtn.classList.toggle("active", m === "spawn" && spawnKind === "goat");
+      anvilBtn.classList.toggle("active", m === "spawn" && spawnKind === "anvil");
+      planeBtn.classList.toggle("active", m === "spawn" && spawnKind === "plane");
+      colaBtn.classList.toggle("active", m === "spawn" && spawnKind === "cola");
+      spongeBtn.classList.toggle("active", m === "spawn" && spawnKind === "sponge");
+      entityBtn.classList.toggle("active", m === "spawn" && spawnKind === "entity");
+      gunBtn.classList.toggle("active", m === "spawn" && spawnKind === "gravgun");
+      squareBtn.classList.toggle("active", m === "spawn" && spawnKind === "block");
+      bucketBtn.classList.toggle("active", m === "bucket");
+      vacBtn.classList.toggle("active", m === "vacuum");
+      needleBtn.classList.toggle("active", m === "needle");
+      canvas.style.cursor = (m === "grab") ? "grab" : ((m === "spawn") ? "copy" : ((m === "vacuum" || m === "needle" || m === "bucket") ? "crosshair" : "default"));
+    }
+    boomBtn.addEventListener("click", () => setMode("boom"));
+    grabBtn.addEventListener("click", () => setMode("grab"));
+    goatBtn.addEventListener("click", () => setMode("spawn", "goat"));
+    anvilBtn.addEventListener("click", () => setMode("spawn", "anvil"));
+    planeBtn.addEventListener("click", () => setMode("spawn", "plane"));
+    colaBtn.addEventListener("click", () => setMode("spawn", "cola"));
+    spongeBtn.addEventListener("click", () => setMode("spawn", "sponge"));
+    entityBtn.addEventListener("click", () => setMode("spawn", "entity"));
+    gunBtn.addEventListener("click", () => setMode("spawn", "gravgun"));
+    let squareHoldTimer = null, squareHeld = false;
+    squareBtn.addEventListener("mousedown", (e) => {
+      if (e.button === 2) return;
+      squareHeld = false;
+      squareHoldTimer = setTimeout(() => { squareHeld = true; resetKeepSurvivors(); }, 500); // hold = reset map, keep survivors
+    });
+    squareBtn.addEventListener("mouseup", (e) => {
+      if (e.button === 2) return;
+      clearTimeout(squareHoldTimer);
+      if (!squareHeld) setMode("spawn", "block"); // quick tap = pick the square tool
+    });
+    squareBtn.addEventListener("mouseleave", () => clearTimeout(squareHoldTimer));
+    squareBtn.addEventListener("contextmenu", (e) => { e.preventDefault(); addSquares(BLOCK_COUNT); }); // right-click = add a batch
+    vacBtn.addEventListener("click", () => setMode("vacuum"));
+    needleBtn.addEventListener("click", () => setMode("needle"));
+    bucketBtn.addEventListener("click", () => setMode("bucket"));
+    function toggleCannibal() { cannibalism = !cannibalism; cannibalBtn.classList.toggle("active", cannibalism); }
+    cannibalBtn.addEventListener("click", toggleCannibal);
+
+    function boom(mx, my) {
+      shake = 20;
+      playBoom();
+      for (const b of blocks) {
+        const dx = b.x + b.w / 2 - mx;
+        const dy = b.y + b.h / 2 - my;
+        const dist = Math.max(30, Math.hypot(dx, dy));
+        const force = (EXPLOSION_POWER * 400) / (dist * dist);
+        b.vx += (dx / dist) * force / b.mass; // heavy things barely budge
+        b.vy += (dy / dist) * force / b.mass;
+        b.spin += (Math.random() - 0.5) * 0.4;
+      }
+    }
+
+    // shared pointer logic — used by BOTH mouse and touch
+    function pointerPress(x, y) {
+      mouse.x = x; mouse.y = y;
+      // drag the vacuum bag if you grabbed it
+      if ((mode === "vacuum" || mode === "needle") &&
+          x >= tankPos.x - 34 && x <= tankPos.x + 34 &&
+          y >= tankPos.y - 44 && y <= tankPos.y + 36) {
+        draggingTank = true; tankGrab.dx = tankPos.x - x; tankGrab.dy = tankPos.y - y; return;
+      }
+      pointerDown = true;
+      if (mode === "boom") {
+        boom(x, y);
+      } else if (mode === "spawn") {
+        addObject(x, y, spawnKind);
+      } else if (mode === "vacuum") {
+        // sucking happens in update() while held
+      } else if (mode === "bucket") {
+        // pouring happens in update() while held
+      } else if (mode === "needle") {
+        const av = availableColors();
+        const c = av[selectedColorIdx];
+        if (c) {
+          let target = null, td = 40;
+          for (const b of blocks) {
+            const d = Math.hypot(x - (b.x + b.w / 2), y - (b.y + b.h / 2));
+            if (d < td) { td = d; target = b; }
+          }
+          if (--tankColors[c] <= 0) delete tankColors[c];
+          if (target) { target.color = c; target.kind = "block"; target.emoji = null; }
+          else { blocks.push({ x: x - 16, y: y - 16, w: 32, h: 32, vx: 0, vy: -2, angle: 0, spin: 0, color: c, mass: 1, kind: "block", emoji: null }); }
+          ejectTankSquare();
+          updateTankDisplay();
+        }
+      } else {
+        let best = null, bestDist = 50;
+        for (const b of blocks) {
+          const d = Math.hypot(x - (b.x + b.w / 2), y - (b.y + b.h / 2));
+          if (d < bestDist) { bestDist = d; best = b; }
+        }
+        if (best && best.kind === "gravgun") held = (held === best ? null : best);
+        else held = best;
+        canvas.style.cursor = "grabbing";
+      }
+    }
+    function pointerMove(x, y) {
+      mouse.x = x; mouse.y = y;
+      if (draggingTank) { tankPos.x = x + tankGrab.dx; tankPos.y = y + tankGrab.dy; }
+    }
+    function pointerRelease() {
+      pointerDown = false; draggingTank = false;
+      if (!held || held.kind !== "gravgun") held = null; // the gravity gun stays in your hand until you click it again
+      if (mode === "grab") canvas.style.cursor = "grab";
+    }
+    canvas.addEventListener("mousedown", (e) => {
+      if (e.button === 2) { mouse.x = e.clientX; mouse.y = e.clientY; rightDown = true; return; }
+      pointerPress(e.clientX, e.clientY);
+    });
+    canvas.addEventListener("mousemove", (e) => pointerMove(e.clientX, e.clientY));
+    addEventListener("mouseup", (e) => { if (e.button === 2) { rightDown = false; return; } pointerRelease(); });
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault()); // let right-click be a game control
+    addEventListener("keydown", (e) => {
+      if (e.key === "r" || e.key === "R") { buildTower(); return; }
+      if (held && held.kind === "gravgun") { // gravity gun controls
+        if (e.key === "1") held.beamDist += 25;                              // push the held object forward
+        if (e.key === "2") held.beamDist = Math.max(50, held.beamDist - 25); // pull it back
+        if (e.key === "3" && held.beamHold) held.beamHold.angle += 0.4;      // rotate what the gun is holding
+        return;
+      }
+      if (mode === "bucket") {
+        if (e.key === "1") bucketLiquid = "water";
+        if (e.key === "2") bucketLiquid = "lava";
+      } else if (e.key >= "1" && e.key <= "9") {
+        selectedColorIdx = Number(e.key) - 1; // load a needle color
+      }
+    });
+    // the "scroll" action — used by the mouse wheel AND two-finger swipes
+    function scrollAction(dy, cx, cy) {
+      if (held && held.kind === "gravgun") {
+        if (held.beamHold) held.beamDist = Math.max(50, held.beamDist + dy * 0.4); // push / pull the held thing
+        else held.aim += dy * 0.005;                                                // aim the gun
+        return;
+      }
+      let best = null, bestDist = 70;
+      for (const b of blocks) {
+        const d = Math.hypot(cx - (b.x + b.w / 2), cy - (b.y + b.h / 2));
+        if (d < bestDist) { bestDist = d; best = b; }
+      }
+      if (best) best.angle += dy * 0.008; // spin the nearest object (tip cola cans, etc.)
+    }
+    canvas.addEventListener("wheel", (e) => { e.preventDefault(); scrollAction(e.deltaY, e.clientX, e.clientY); }, { passive: false });
+
+    // ===== TOUCH CONTROLS (phone): hold for a tool radial, tap/drag to use, two fingers for beam/aim =====
+    const RADIAL = [
+      { icon: "💥", act: () => setMode("boom") },
+      { icon: "✋", act: () => setMode("grab") },
+      { icon: "🐐", act: () => setMode("spawn", "goat") },
+      { icon: "⚓", act: () => setMode("spawn", "anvil") },
+      { icon: "✈️", act: () => setMode("spawn", "plane") },
+      { icon: "🥤", act: () => setMode("spawn", "cola") },
+      { icon: "🧽", act: () => setMode("spawn", "sponge") },
+      { icon: "⬛", act: () => setMode("spawn", "entity") },
+      { icon: "🔫", act: () => setMode("spawn", "gravgun") },
+      { icon: "🟦", act: () => setMode("spawn", "block") },
+      { icon: "🪣", act: () => setMode("bucket") },
+      { icon: "🌀", act: () => setMode("vacuum") },
+      { icon: "💉", act: () => setMode("needle") },
+      { icon: "🔗", act: () => toggleStick() },
+      { icon: "🩸", act: () => toggleCannibal() },
+      { icon: "🔄", act: () => buildTower() },
+      { icon: "🏆", act: () => resetKeepSurvivors() },
+    ];
+    let radialOpen = false, radialSel = -1; const radialCenter = { x: 0, y: 0 };
+    function openRadial(x, y) {
+      const m = Math.min(170, Math.min(W, H) * 0.4) + 44; // keep the whole ring on screen
+      radialOpen = true; radialSel = -1;
+      radialCenter.x = Math.max(m, Math.min(W - m, x));
+      radialCenter.y = Math.max(m, Math.min(H - m, y));
+    }
+    function updateRadial(x, y) {
+      const dx = x - radialCenter.x, dy = y - radialCenter.y;
+      if (Math.hypot(dx, dy) < 34) { radialSel = -1; return; } // center = cancel
+      let ang = Math.atan2(dy, dx) + Math.PI / 2;
+      if (ang < 0) ang += Math.PI * 2;
+      radialSel = Math.round(ang / (Math.PI * 2 / RADIAL.length)) % RADIAL.length;
+    }
+    function closeRadial(select) {
+      if (select && radialSel >= 0) RADIAL[radialSel].act();
+      radialOpen = false; radialSel = -1;
+    }
+    function drawRadial() {
+      const R = Math.min(170, Math.min(W, H) * 0.4), n = RADIAL.length;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.beginPath(); ctx.arc(radialCenter.x, radialCenter.y, R + 34, 0, Math.PI * 2); ctx.fill();
+      for (let i = 0; i < n; i++) {
+        const a = i * (Math.PI * 2 / n) - Math.PI / 2;
+        const ix = radialCenter.x + Math.cos(a) * R, iy = radialCenter.y + Math.sin(a) * R;
+        ctx.fillStyle = (i === radialSel) ? "#2ed573" : "#33475b";
+        ctx.beginPath(); ctx.arc(ix, iy, 27, 0, Math.PI * 2); ctx.fill();
+        ctx.font = "28px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(RADIAL[i].icon, ix, iy);
+      }
+      ctx.fillStyle = "rgba(255,255,255,0.25)";
+      ctx.beginPath(); ctx.arc(radialCenter.x, radialCenter.y, 26, 0, Math.PI * 2); ctx.fill();
+    }
+    function swatchHit(x, y) {
+      const av = availableColors(), sy = tankPos.y - 74;
+      for (let i = 0; i < av.length; i++) {
+        const sx = tankPos.x - 34 + i * 22;
+        if (x >= sx && x <= sx + 18 && y >= sy && y <= sy + 18) return i;
+      }
+      return -1;
+    }
+    function touchTap(x, y) {
+      if (mode === "bucket") { bucketLiquid = (bucketLiquid === "water" ? "lava" : "water"); return; } // tap switches liquid
+      if (mode === "needle") { const i = swatchHit(x, y); if (i >= 0) { selectedColorIdx = i; return; } } // tap a swatch to load it
+      pointerPress(x, y); pointerRelease();
+    }
+    let tStart = null, tRadialTimer = null, tActing = false, tTwo = false, tPrev = null;
+    canvas.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      if (e.touches.length >= 2) { // two fingers = right-click beam + swipe aim
+        clearTimeout(tRadialTimer);
+        if (radialOpen) closeRadial(false);
+        if (tActing) { pointerRelease(); tActing = false; }
+        tStart = null; tTwo = true; rightDown = true;
+        const a = e.touches[0], b = e.touches[1];
+        tPrev = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+        mouse.x = tPrev.x; mouse.y = tPrev.y;
+        return;
+      }
+      const t = e.touches[0];
+      tStart = { x: t.clientX, y: t.clientY }; tActing = false;
+      mouse.x = t.clientX; mouse.y = t.clientY;
+      tRadialTimer = setTimeout(() => openRadial(tStart.x, tStart.y), 300); // hold still = tool menu
+    }, { passive: false });
+    canvas.addEventListener("touchmove", (e) => {
+      e.preventDefault();
+      if (tTwo && e.touches.length >= 2) {
+        const a = e.touches[0], b = e.touches[1];
+        const cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
+        mouse.x = cx; mouse.y = cy;
+        if (tPrev) {
+          const dx = cx - tPrev.x, dy = cy - tPrev.y;
+          if (held && held.kind === "gravgun" && held.beamHold && Math.abs(dx) > Math.abs(dy)) held.beamHold.angle += dx * 0.02; // twist held object
+          else scrollAction(dy * 5, cx, cy); // vertical swipe = aim / push-pull / spin
+        }
+        tPrev = { x: cx, y: cy };
+        return;
+      }
+      if (radialOpen) { const t = e.touches[0]; updateRadial(t.clientX, t.clientY); return; }
+      if (!tStart) return;
+      const t = e.touches[0];
+      const moved = Math.hypot(t.clientX - tStart.x, t.clientY - tStart.y);
+      if (!tActing && moved > 12) { clearTimeout(tRadialTimer); tActing = true; pointerPress(tStart.x, tStart.y); } // drag = use the tool
+      if (tActing) pointerMove(t.clientX, t.clientY);
+      else { mouse.x = t.clientX; mouse.y = t.clientY; }
+    }, { passive: false });
+    addEventListener("touchend", (e) => {
+      if (tTwo) { if (e.touches.length < 2) { tTwo = false; rightDown = false; tPrev = null; } return; }
+      clearTimeout(tRadialTimer);
+      if (radialOpen) { closeRadial(true); tStart = null; return; }   // release on a wedge = pick it
+      if (tActing) { pointerRelease(); tActing = false; tStart = null; return; }
+      if (tStart) { touchTap(tStart.x, tStart.y); tStart = null; }     // quick tap = use the tool once
+    });
+
+    function update() {
+      const floor = H - 20;
+      let maxSpeed = 0;
+      for (const b of blocks) {
+        if (b.captured) continue; // being eaten — the entity controls its position, skip normal physics
+        b.vy += GRAVITY;
+        b.x += b.vx;
+        b.y += b.vy;
+        b.angle += b.spin;
+
+        // floor
+        if (b.y + b.h > floor) { b.y = floor - b.h; b.vy *= -0.5; b.vx *= 0.8; b.spin *= 0.8; }
+        // ceiling — bounce off the top so nothing flies off into space
+        if (b.y < 0) { b.y = 0; b.vy *= -0.5; }
+        // walls
+        if (b.x < 0) { b.x = 0; b.vx *= -0.6; }
+        if (b.x + b.w > W) { b.x = W - b.w; b.vx *= -0.6; }
+        const sp = Math.hypot(b.vx, b.vy);
+        if (sp > maxSpeed) maxSpeed = sp;
+        if (b.fire > 0) { b.fire--; if (b.fire % 5 === 0) spawnFlame(b); if (b.fire === 0) b.dead = true; } // burns up, then vanishes
+        if (b.kind === "entity" && b.activated) {
+          b.growTimer++;
+          if (b.growTimer % 60 === 0 && b.limbs.length < 8) addLimb(b); // grow a limb each second
+          const ecx = b.x + b.w / 2, ecy = b.y + b.h / 2;
+          // walk along the ground toward the nearest thing to hunt it down
+          {
+            let tx = null, td = Infinity;
+            for (const o of blocks) {
+              if (o === b || o.dead || o.captured) continue;
+              if (o.kind === "entity" && !cannibalism) continue; // don't hunt other entities unless cannibalism is on
+              const dd = Math.hypot((o.x + o.w / 2) - ecx, (o.y + o.h / 2) - ecy);
+              if (dd < td) { td = dd; tx = o.x + o.w / 2; }
+            }
+            const grounded = (b.y + b.h) >= floor - 6;
+            if (grounded && tx !== null) {
+              const dir = Math.sign(tx - ecx);
+              b.vx += dir * 0.4;
+              if (b.vx > ENTITY_SPEED) b.vx = ENTITY_SPEED;
+              if (b.vx < -ENTITY_SPEED) b.vx = -ENTITY_SPEED;
+              b.walkPhase = (b.walkPhase || 0) + 1;
+              if (b.walkPhase % 24 === 0) b.vy -= 2.2; // a little stepping hop
+            }
+          }
+          if (!b.eating) b.eating = [];
+          // animate every block it's currently eating (up to 4 at once)
+          for (const bite of b.eating) {
+            const prey = bite.prey;
+            if (!prey || prey.dead) { bite.done = true; continue; }
+            const t = ++bite.timer;
+            const ox = (bite.slot - 1.5) * 26; // spread the 4 held blocks apart
+            if (t <= 60) {
+              // hold it up above the body for a second
+              const k = t / 60, hx = ecx + ox, hy = ecy - b.h - 44;
+              prey.x = (bite.fromX + (hx - bite.fromX) * k) - prey.w / 2;
+              prey.y = (bite.fromY + (hy - bite.fromY) * k) - prey.h / 2;
+              prey.angle = 0;
+            } else if (t <= 90) {
+              // bring it down to the mouth
+              const k = (t - 60) / 30, fromY = ecy - b.h - 44;
+              prey.x = (ecx + ox * (1 - k)) - prey.w / 2;
+              prey.y = (fromY + (ecy - fromY) * k) - prey.h / 2;
+            } else if (t <= 150) {
+              // bob it up and down at the mouth for a second (chewing)
+              prey.x = (ecx + ox * 0.3) - prey.w / 2;
+              prey.y = (ecy + Math.sin((t - 90) * 0.8 + bite.slot) * 8) - prey.h / 2;
+              prey.angle = Math.sin((t - 90) * 1.6) * 0.3;
+            } else {
+              // gulp — what it ate disappears
+              prey.dead = true; bite.done = true;
+            }
+          }
+          b.eating = b.eating.filter(bite => !bite.done);
+          // grab new blocks to fill up to 4 hands
+          if (b.limbs.length > 0 && b.eating.length < 4) {
+            b.eatCooldown = (b.eatCooldown || 0) - 1;
+            if (b.eatCooldown <= 0) {
+              const reach = 50 + b.limbs.length * 8; // the more limbs, the farther it reaches
+              const near = [];
+              for (const o of blocks) {
+                if (o === b || o.dead || o.captured) continue;
+                if (o.kind === "entity" && !cannibalism) continue; // only eat other entities if cannibalism is on
+                const d = Math.hypot((o.x + o.w / 2) - ecx, (o.y + o.h / 2) - ecy);
+                if (d < reach) near.push({ o, d });
+              }
+              near.sort((p, q) => p.d - q.d);
+              const need = 4 - b.eating.length;
+              for (let i = 0; i < Math.min(need, near.length); i++) {
+                const prey = near[i].o;
+                prey.captured = true; prey.capturedBy = b;
+                b.eating.push({ prey, timer: 0, slot: b.eating.length, fromX: prey.x + prey.w / 2, fromY: prey.y + prey.h / 2 });
+              }
+              b.eatCooldown = 8;
+            }
+          }
+        }
+      }
+
+      // cola cans burst when they get tipped far enough over
+      const cans = blocks.filter(b => b.kind === "cola" && !b.popped);
+      for (const can of cans) {
+        let a = can.angle % (Math.PI * 2); if (a < 0) a += Math.PI * 2;
+        const tilt = Math.min(a, Math.PI * 2 - a); // 0 = standing up, bigger = more tipped over
+        if (tilt > 1.0) popCola(can);
+      }
+
+      // springy glue: pull bonded blocks back together — unless stretched too far, then SNAP
+      const survivors = [];
+      let broke = 0;
+      for (const bond of bonds) {
+        const a = bond.a, b = bond.b;
+        const dx = (b.x + b.w / 2) - (a.x + a.w / 2);
+        const dy = (b.y + b.h / 2) - (a.y + a.h / 2);
+        const dist = Math.hypot(dx, dy) || 0.001;
+        if (dist > BREAK_DISTANCE) { broke++; continue; } // SNAP! this bond breaks and the block flies free
+        const nx = dx / dist, ny = dy / dist;
+        const strength = bond.stiff ? 1 : STICK_STRENGTH; // cola welds are rock-solid
+        const correction = (dist - bond.rest) * 0.5 * strength;
+        a.x += nx * correction; a.y += ny * correction;
+        b.x -= nx * correction; b.y -= ny * correction;
+        survivors.push(bond);
+      }
+      bonds = survivors;
+      if (broke > 0) playSnap(); // play one crack sound when glue breaks
+
+      // blocks bump into each other — treat each block like a circle
+      let popsThisFrame = 0;
+      for (let i = 0; i < blocks.length; i++) {
+        for (let j = i + 1; j < blocks.length; j++) {
+          const a = blocks[i], b = blocks[j];
+          if (a.captured || b.captured) continue; // stuff being eaten doesn't collide
+          const dx = (b.x + b.w / 2) - (a.x + a.w / 2);
+          const dy = (b.y + b.h / 2) - (a.y + a.h / 2);
+          const dist = Math.hypot(dx, dy);
+          const minDist = a.w / 2 + b.w / 2;
+          if (dist > 0 && dist < minDist) {
+            const nx = dx / dist, ny = dy / dist;
+            const overlap = minDist - dist;
+            const totalMass = a.mass + b.mass;
+            // shove them apart — the heavier one moves less
+            a.x -= nx * overlap * (b.mass / totalMass); a.y -= ny * overlap * (b.mass / totalMass);
+            b.x += nx * overlap * (a.mass / totalMass); b.y += ny * overlap * (a.mass / totalMass);
+            const avn = a.vx * nx + a.vy * ny;
+            const bvn = b.vx * nx + b.vy * ny;
+            const vn = avn - bvn; // how fast they're closing in on each other
+            if (vn > 0) {
+              const j = (1 + BOUNCINESS) * vn / (1 / a.mass + 1 / b.mass); // bounce force, shared by weight
+              a.vx -= (j / a.mass) * nx; a.vy -= (j / a.mass) * ny;
+              b.vx += (j / b.mass) * nx; b.vy += (j / b.mass) * ny;
+              // only pop on a HARD hit, and never more than MAX_POPS at once
+              if (vn > POP_THRESHOLD && popsThisFrame < MAX_POPS) { playPop(vn); popsThisFrame++; }
+            }
+            // cola drops glue onto whatever they bump into
+            if (a.kind === "coladrop") stickTo(a, b);
+            else if (b.kind === "coladrop") stickTo(b, a);
+            // water and lava paint any blank white square they touch
+            if (a.kind === "water" || a.kind === "lava") paintBlank(a, b);
+            else if (b.kind === "water" || b.kind === "lava") paintBlank(b, a);
+            // water puts out fire / lava and turns to gray stone
+            if (a.kind === "water") waterHitsFire(a, b);
+            else if (b.kind === "water") waterHitsFire(b, a);
+            // a sponge soaks up (deletes) any liquid it touches
+            if (a.kind === "sponge" && (b.kind === "water" || b.kind === "lava" || b.kind === "coladrop")) b.dead = true;
+            else if (b.kind === "sponge" && (a.kind === "water" || a.kind === "lava" || a.kind === "coladrop")) a.dead = true;
+            // lava sets whatever it touches on fire
+            if (a.kind === "lava") ignite(b);
+            else if (b.kind === "lava") ignite(a);
+            // the entity wakes up when anything touches it
+            if (a.kind === "entity") a.activated = true;
+            if (b.kind === "entity") b.activated = true;
+          }
+        }
+      }
+
+      // if you're holding a block, drag it to follow your mouse (and fling it on release)
+      if (held) {
+        const nx = mouse.x - held.w / 2;
+        const ny = mouse.y - held.h / 2;
+        held.vx = nx - held.x;
+        held.vy = ny - held.y;
+        held.x = nx; held.y = ny;
+      }
+
+      // gravity gun: if you're carrying one, its beam grabs and moves an object
+      if (held && held.kind === "gravgun") {
+        const gun = held;
+        gun.angle = gun.aim; // point the gun where it's aimed
+        const gx = gun.x + gun.w / 2, gy = gun.y + gun.h / 2;
+        if (rightDown) {
+          if (!gun.beamHold || gun.beamHold.dead) {
+            let best = null, bd = 500;
+            for (const o of blocks) {
+              if (o === gun || o.dead || o.captured) continue;
+              const dx = (o.x + o.w / 2) - gx, dy = (o.y + o.h / 2) - gy;
+              const dot = dx * Math.cos(gun.aim) + dy * Math.sin(gun.aim); // is it in front of the gun?
+              const dist = Math.hypot(dx, dy);
+              if (dot > 0 && dist < bd) { bd = dist; best = o; }
+            }
+            if (best) { gun.beamHold = best; best.captured = true; best.capturedBy = gun; }
+          }
+          if (gun.beamHold) {
+            const t = gun.beamHold;
+            const tx = gx + Math.cos(gun.aim) * gun.beamDist;
+            const ty = gy + Math.sin(gun.aim) * gun.beamDist;
+            const cx = t.x + t.w / 2, cy = t.y + t.h / 2;
+            t.vx = tx - cx; t.vy = ty - cy; // give it velocity so it punts when released
+            t.x = tx - t.w / 2; t.y = ty - t.h / 2;
+          }
+        } else if (gun.beamHold) {
+          gun.beamHold.captured = false; gun.beamHold.capturedBy = null; // let go — it flies off
+          gun.beamHold = null;
+        }
+      }
+
+      // bucket: while held, pour out water (blue) or lava (orange/yellow/red) droplets
+      if (mode === "bucket" && pointerDown) {
+        const isLava = bucketLiquid === "lava";
+        for (let k = 0; k < 3; k++) {
+          const ang = Math.PI / 2 + (Math.random() - 0.5) * 1.0; // pour downward-ish
+          const spd = 1 + Math.random() * 3;
+          const col = isLava ? LAVA_DROP_COLORS[Math.floor(Math.random() * LAVA_DROP_COLORS.length)] : WATER_COLOR;
+          blocks.push({
+            x: mouse.x - 6, y: mouse.y - 6, w: 12, h: 12,
+            vx: Math.cos(ang) * spd + (Math.random() - 0.5) * 2, vy: Math.sin(ang) * spd,
+            angle: 0, spin: 0, color: col, mass: 0.3,
+            emoji: null, kind: isLava ? "lava" : "water", // liquids stay until a vacuum or sponge removes them
+          });
+        }
+      }
+
+      // vacuum: while held, suck nearby stuff toward the nozzle and swallow the close ones
+      if (mode === "vacuum" && pointerDown) {
+        for (const b of blocks) {
+          const dx = mouse.x - (b.x + b.w / 2);
+          const dy = mouse.y - (b.y + b.h / 2);
+          const d = Math.hypot(dx, dy) || 0.001;
+          if (d < VACUUM_RANGE) {
+            b.vx += (dx / d) * VACUUM_POWER + (-dy / d) * VACUUM_SWIRL; // pull it in AND swirl it around
+            b.vy += (dy / d) * VACUUM_POWER + (dx / d) * VACUUM_SWIRL;
+            if (d < 22) {
+              if (b.kind === "entity") {
+                // the vacuum can't swallow the entity — it strips his power, turning him into a normal block!
+                for (const bite of (b.eating || [])) { if (bite.prey) { bite.prey.captured = false; bite.prey.capturedBy = null; } }
+                b.kind = "block"; b.emoji = null;
+                b.color = colors[Math.floor(Math.random() * colors.length)];
+                b.limbs = []; b.activated = false; b.eating = [];
+              } else {
+                b.dead = true; addToTank(injectColorFor(b)); // swallowed — bank its color!
+              }
+            }
+          }
+        }
+        updateTankDisplay();
+      }
+
+      // right-click blows blocks back OUT of the tank, like a leaf blower
+      if (mode === "vacuum" && rightDown && tankTotal() > 0) {
+        const tx = tankPos.x, ty = tankPos.y;
+        let dx = mouse.x - tx, dy = mouse.y - ty; const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+        const shots = Math.min(tankTotal(), 3); // blow a few out per frame
+        for (let k = 0; k < shots; k++) {
+          const c = takeFromTank(); if (!c) break;
+          const a = (Math.random() - 0.5) * 0.5;              // a little spread
+          const vx = dx * Math.cos(a) - dy * Math.sin(a);
+          const vy = dx * Math.sin(a) + dy * Math.cos(a);
+          const spd = 9 + Math.random() * 6;
+          blocks.push({
+            x: mouse.x - 18, y: mouse.y - 18, w: 36, h: 36,
+            vx: vx * spd, vy: vy * spd, angle: 0, spin: (Math.random() - 0.5) * 0.3,
+            color: c, mass: 1, kind: "block", emoji: null,
+          });
+        }
+        updateTankDisplay();
+      }
+
+      // age the cola drops and water droplets so they fade after their time is up
+      for (const b of blocks) {
+        if (b.life !== undefined && --b.life <= 0) b.dead = true;
+      }
+
+      // release captured things whose captor is gone or no longer holding them
+      for (const b of blocks) {
+        if (!b.captured) continue;
+        const cap = b.capturedBy;
+        if (!cap || cap.dead) { b.captured = false; b.capturedBy = null; }
+        else if (cap.kind === "gravgun" && (held !== cap || !rightDown)) { b.captured = false; b.capturedBy = null; }
+      }
+
+      // remove everything that got swallowed or faded away (and any glue it made)
+      if (blocks.some(b => b.dead)) {
+        bonds = bonds.filter(bd => !bd.a.dead && !bd.b.dead);
+        blocks = blocks.filter(b => !b.dead);
+      }
+
+      // move the fire triangles upward and clear out old ones
+      for (const f of flames) { f.x += f.vx; f.y += f.vy; f.life--; }
+      flames = flames.filter(f => f.life > 0);
+
+      updateScream(maxSpeed); // SCREAM when things are flying fast!
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      ctx.save();
+      if (shake > 0) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake *= 0.9; if (shake < 0.5) shake = 0; }
+
+      // ground line
+      ctx.fillStyle = "#2c3e50";
+      ctx.fillRect(0, H - 20, W, 20);
+
+      // draw the glue lines so you can watch them snap
+      ctx.strokeStyle = "rgba(255,255,255,0.25)";
+      ctx.lineWidth = 3;
+      for (const bond of bonds) {
+        ctx.beginPath();
+        ctx.moveTo(bond.a.x + bond.a.w / 2, bond.a.y + bond.a.h / 2);
+        ctx.lineTo(bond.b.x + bond.b.w / 2, bond.b.y + bond.b.h / 2);
+        ctx.stroke();
+      }
+
+      // the entity's writhing limbs (drawn behind the bodies)
+      for (const b of blocks) {
+        if (b.kind === "entity" && b.activated) drawEntityLimbs(b);
+      }
+
+      for (const b of blocks) {
+        ctx.save();
+        ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
+        ctx.rotate(b.angle);
+        if (b.emoji) {
+          ctx.font = b.w + "px serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(b.emoji, 0, 0);
+        } else if (b.kind === "anvil") {
+          drawAnvil(b.w, b.h);
+        } else if (b.kind === "cola") {
+          drawCan(b.w, b.h);
+        } else if (b.kind === "coladrop" || b.kind === "water" || b.kind === "lava") {
+          ctx.fillStyle = b.color;
+          ctx.beginPath(); ctx.arc(0, 0, b.w / 2, 0, Math.PI * 2); ctx.fill();
+        } else if (b.kind === "entity") {
+          ctx.fillStyle = "#000000";
+          ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+          ctx.strokeStyle = "#444444"; ctx.lineWidth = 2; ctx.strokeRect(-b.w / 2, -b.h / 2, b.w, b.h);
+        } else if (b.kind === "gravgun") {
+          ctx.fillStyle = "#5a5f66";                            // gray body
+          ctx.fillRect(-b.w / 2, -b.h / 2, b.w * 0.7, b.h);
+          ctx.fillStyle = "#ff8a00";                            // orange prongs at the front
+          ctx.fillRect(b.w * 0.12, -b.h / 2, b.w * 0.32, b.h * 0.28);
+          ctx.fillRect(b.w * 0.12, b.h / 2 - b.h * 0.28, b.w * 0.32, b.h * 0.28);
+          ctx.fillStyle = "#ffd24a";                            // glowing core
+          ctx.beginPath(); ctx.arc(b.w * 0.05, 0, 5, 0, Math.PI * 2); ctx.fill();
+        } else {
+          ctx.fillStyle = b.color;
+          ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+        }
+        ctx.restore();
+      }
+
+      // draw the fire triangles (always pointing up)
+      for (const f of flames) {
+        ctx.globalAlpha = Math.min(1, f.life / 30);
+        ctx.fillStyle = f.color;
+        ctx.beginPath();
+        ctx.moveTo(f.x, f.y - f.size);
+        ctx.lineTo(f.x - f.size / 2, f.y);
+        ctx.lineTo(f.x + f.size / 2, f.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // gravity gun beam
+      if (held && held.kind === "gravgun" && held.beamHold) {
+        const gx = held.x + held.w / 2, gy = held.y + held.h / 2;
+        const t = held.beamHold;
+        ctx.strokeStyle = "rgba(255,170,50,0.85)"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(t.x + t.w / 2, t.y + t.h / 2); ctx.stroke();
+      }
+
+      ctx.restore();
+
+      if (mode === "vacuum") drawVacuum();
+      else if (mode === "needle") drawNeedle();
+      else if (mode === "bucket") drawBucket();
+      if (radialOpen) drawRadial();
+    }
+
+    function loop() { update(); draw(); requestAnimationFrame(loop); }
+    loop();
+  </script>
+</body>
+</html>
