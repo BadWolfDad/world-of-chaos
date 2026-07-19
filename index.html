@@ -34,7 +34,6 @@
     .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #1b2836; }
     .btn.active { background: #2ed573; color: #06331b; box-shadow: 0 2px 0 #1e9e52; }
     @media (max-width: 820px) {
-      #controls { display: none; }   /* on phones the hold-radial replaces the button row */
       #title { font-size: 22px; }
       #hint { font-size: 13px; bottom: 10px; }
     }
@@ -330,16 +329,18 @@
     // water puts out fire, and when it hits fire or lava it hardens into a gray stone block
     function waterHitsFire(drop, other) {
       if (other.kind === "lava" || other.fire > 0) {
-        if (other.fire > 0) other.fire = 0;      // extinguish the flames
-        drop.kind = "block"; drop.emoji = null;  // the water hardens...
-        drop.color = "#7f8c8d";                  // ...into gray stone
+        if (other.fire > 0) other.fire = 0;            // extinguish the flames
+        if (other.kind === "lava") other.dead = true;  // the lava is used up making the stone
+        drop.kind = "block"; drop.emoji = null;        // the water hardens...
+        drop.color = "#7f8c8d";                        // ...into gray stone
+        drop.stone = true;                             // stone is fireproof — lava can't burn it
         drop.w = 18; drop.h = 18; drop.mass = 1;
       }
     }
 
     // lava sets things on fire; a burning thing puffs out rising flame triangles
     function ignite(o) {
-      if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") return;
+      if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop" || o.stone) return; // stone won't burn
       if (!o.fire) o.fire = 60 + Math.floor(Math.random() * 300); // burns 1 to 6 seconds
     }
     function spawnFlame(o) {
@@ -745,6 +746,15 @@
       pointerPress(x, y); pointerRelease();
     }
     let tStart = null, tRadialTimer = null, tActing = false, tTwo = false, tPrev = null;
+    // computer = buttons + mouse (the pre-radial way); phone = radial + swipe
+    const isPhone = window.matchMedia("(pointer: coarse)").matches;
+    if (isPhone) {
+      document.getElementById("controls").style.display = "none";
+      document.getElementById("hint").textContent = "Tap to use • hold for the tool menu • two fingers = beam / aim";
+    } else {
+      document.getElementById("hint").textContent = "CLICK to use • pick a tool below • scroll to aim/tip • right-click = beam";
+    }
+    if (isPhone) {
     canvas.addEventListener("touchstart", (e) => {
       e.preventDefault();
       if (e.touches.length >= 2) { // two fingers = right-click beam + swipe aim
@@ -791,6 +801,7 @@
       if (tActing) { pointerRelease(); tActing = false; tStart = null; return; }
       if (tStart) { touchTap(tStart.x, tStart.y); tStart = null; }     // quick tap = use the tool once
     });
+    } // end phone-only touch controls
 
     function update() {
       const floor = H - 20;
