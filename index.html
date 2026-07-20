@@ -40,6 +40,13 @@
       cursor: pointer; touch-action: none; box-shadow: 0 3px 0 #1b2836;
     }
     .rbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #1b2836; }
+    #quests { position: fixed; top: 88px; left: 10px; color: #fff; font-family: Arial, sans-serif; font-size: 14px; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.7); max-width: 62vw; line-height: 1.5; }
+    #quests .qtitle { font-weight: bold; font-size: 18px; color: #ffcf33; margin-bottom: 3px; }
+    #quests .qdone { color: #2ed573; }
+    #quests .qp { opacity: 0.65; font-size: 12px; }
+    #levelbanner { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: rgba(0,0,0,0.55); z-index: 10; }
+    #bannertext { color: #ffcf33; font-family: Arial, sans-serif; font-weight: bold; font-size: 40px; text-shadow: 0 2px 8px #000; text-align: center; }
+    #nextLevelBtn { font-size: 24px; padding: 14px 32px; border: none; border-radius: 14px; background: #2ed573; color: #06331b; font-family: Arial, sans-serif; font-weight: bold; cursor: pointer; box-shadow: 0 4px 0 #1e9e52; }
     @media (max-width: 820px) {
       #title { font-size: 22px; }
       #hint { font-size: 13px; bottom: 10px; }
@@ -57,10 +64,12 @@
     <button id="goatBtn" class="btn">🐐 GOAT</button>
     <button id="anvilBtn" class="btn">⚓ ANVIL</button>
     <button id="planeBtn" class="btn">✈️ PLANE</button>
+    <button id="birdBtn" class="btn">🐦 BIRD</button>
     <button id="colaBtn" class="btn">🥤 COLA</button>
     <button id="spongeBtn" class="btn">🧽 SPONGE</button>
     <button id="entityBtn" class="btn">⬛ ENTITY</button>
     <button id="gunBtn" class="btn">🔫 GRAV GUN</button>
+    <button id="jetBtn" class="btn">🚀 JET</button>
     <button id="squareBtn" class="btn">🟦 ADD SQUARE</button>
     <button id="bucketBtn" class="btn">🪣 BUCKET</button>
     <button id="vacBtn" class="btn">🌀 VACUUM</button>
@@ -71,6 +80,11 @@
   <div id="rotctl">
     <button id="rotL" class="rbtn">↺</button>
     <button id="rotR" class="rbtn">↻</button>
+  </div>
+  <div id="quests"></div>
+  <div id="levelbanner">
+    <div id="bannertext">🏆 LEVEL COMPLETE!</div>
+    <button id="nextLevelBtn">NEXT LEVEL ▶</button>
   </div>
 
   <script>
@@ -101,10 +115,12 @@
     const goatBtn = document.getElementById("goatBtn");
     const anvilBtn = document.getElementById("anvilBtn");
     const planeBtn = document.getElementById("planeBtn");
+    const birdBtn = document.getElementById("birdBtn");
     const colaBtn = document.getElementById("colaBtn");
     const spongeBtn = document.getElementById("spongeBtn");
     const entityBtn = document.getElementById("entityBtn");
     const gunBtn = document.getElementById("gunBtn");
+    const jetBtn = document.getElementById("jetBtn");
     const squareBtn = document.getElementById("squareBtn");
     const bucketBtn = document.getElementById("bucketBtn");
     const vacBtn = document.getElementById("vacBtn");
@@ -138,6 +154,8 @@
     const LAVA_DROP_COLORS = ["#ffa502", "#feca57", "#ff4757"]; // orange / yellow / red lava blobs
     let bucketLiquid = "water";    // what the bucket pours: "water" or "lava"
     let cannibalism = false;       // can entities eat each other?
+    let level = 0, levelComplete = false, quests = [];
+    const stats = { booms: 0, destroyed: 0, stone: 0, fires: 0, eaten: 0, colaPops: 0, vacuumed: 0, defeated: 0 };
     const mouse = { x: 0, y: 0 };
 
     // ===== SOUND — built out of pure math, no files needed =====
@@ -216,6 +234,17 @@
         screamGain.gain.setTargetAtTime(0, now, 0.05); // quiet again when things slow down
       }
     }
+    function playWin() { // little rising jingle when a level is beaten
+      const ac = getAudio(), now = ac.currentTime;
+      [523, 659, 784, 1047].forEach((f, i) => {
+        const o = ac.createOscillator(); o.type = "triangle"; o.frequency.value = f;
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0.0001, now + i * 0.12);
+        g.gain.exponentialRampToValueAtTime(0.25 * BOOM_VOLUME, now + i * 0.12 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.12 + 0.25);
+        o.connect(g); g.connect(ac.destination); o.start(now + i * 0.12); o.stop(now + i * 0.12 + 0.26);
+      });
+    }
     // ===========================================================
 
     function buildTower() {
@@ -263,16 +292,63 @@
       }
     }
 
+    // ===== QUESTS & LEVELS — each level rolls 1 to 3 random goals =====
+    const QUESTS = [
+      { key: "booms",     label: n => `💥 Boom ${n} times`,        min: 3,  max: 8 },
+      { key: "destroyed", label: n => `🧹 Clear ${n} blocks`,       min: 15, max: 50 },
+      { key: "stone",     label: n => `🪨 Make ${n} stone blocks`,  min: 3,  max: 8 },
+      { key: "fires",     label: n => `🔥 Set ${n} things on fire`, min: 5,  max: 15 },
+      { key: "eaten",     label: n => `⬛ Feed the entity ${n}`,     min: 4,  max: 10, entity: true },
+      { key: "colaPops",  label: n => `🥤 Pop ${n} cola cans`,      min: 1,  max: 3 },
+      { key: "vacuumed",  label: n => `🌀 Vacuum up ${n} things`,   min: 8,  max: 20 },
+      { key: "defeated",  label: n => `🏆 Defeat ${n} entity`,      min: 1,  max: 2, entity: true },
+    ];
+    function newLevel() {
+      level++;
+      buildTower();
+      const n = 1 + Math.floor(Math.random() * 3); // 1 to 3 quests
+      const pool = QUESTS.slice();
+      for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+      quests = pool.slice(0, n).map(q => {
+        const target = q.min + Math.floor(Math.random() * (q.max - q.min + 1));
+        return { key: q.key, target, label: q.label(target), start: stats[q.key], done: false };
+      });
+      if (quests.some(q => q.entity)) { addObject(W * 0.3, 90, "entity"); addObject(W * 0.7, 90, "entity"); } // give them entities to work with
+      levelComplete = false;
+      document.getElementById("levelbanner").style.display = "none";
+    }
+    function updateQuests() {
+      if (!quests.length) return;
+      let allDone = true, html = `<div class="qtitle">LEVEL ${level}</div>`;
+      for (const q of quests) {
+        const prog = Math.min(q.target, stats[q.key] - q.start);
+        q.done = prog >= q.target;
+        if (!q.done) allDone = false;
+        html += `<div class="${q.done ? 'qdone' : 'q'}">${q.done ? '☑' : '☐'} ${q.label} <span class="qp">${prog}/${q.target}</span></div>`;
+      }
+      const el = document.getElementById("quests");
+      if (el.innerHTML !== html) el.innerHTML = html;
+      if (allDone && !levelComplete) {
+        levelComplete = true;
+        document.getElementById("bannertext").textContent = "🏆 LEVEL " + level + " COMPLETE!";
+        document.getElementById("levelbanner").style.display = "flex";
+        playWin();
+      }
+    }
+    document.getElementById("nextLevelBtn").addEventListener("click", newLevel);
+
     // drop a new object (a goat, an anvil, or a plain block) into the world
     function addObject(x, y, kind) {
       let w = 40, h = 40, mass = 1, emoji = null;
       if (kind === "goat")  { w = 46; h = 46; mass = 2; emoji = "🐐"; }
       if (kind === "anvil") { w = 52; h = 44; mass = 8; }        // anvil = super heavy
       if (kind === "plane") { w = 60; h = 60; mass = 1.5; emoji = "✈️"; }
+      if (kind === "bird") { w = 34; h = 34; mass = 0.6; emoji = "🐦"; } // flies around; blows up if a jet sucks it in
       if (kind === "cola")  { w = 34; h = 54; mass = 2; }        // drawn as a can; tips over and fizzes
       if (kind === "sponge") { w = 44; h = 34; mass = 1.5; emoji = "🧽"; } // soaks up liquids it touches
       if (kind === "entity") { w = 40; h = 40; mass = 2; } // black square that grows writhing limbs when touched
       if (kind === "gravgun") { w = 54; h = 26; mass = 2; } // HL2-style gravity gun you carry and fire
+      if (kind === "jet") { w = 56; h = 28; mass = 2; } // jet engine: sucks blocks in and burns them into fire
       const obj = {
         x: x - w / 2, y: y - h / 2, w, h,
         vx: 0, vy: 0, angle: 0, spin: 0,
@@ -282,6 +358,7 @@
       if (kind === "cola") obj.popped = false; // hasn't fizzed yet
       if (kind === "entity") { obj.activated = false; obj.growTimer = 0; obj.limbs = []; obj.eating = []; }
       if (kind === "gravgun") { obj.aim = -Math.PI / 2; obj.angle = -Math.PI / 2; obj.beamHold = null; obj.beamDist = 120; }
+      if (kind === "jet") { obj.aim = 0; obj.angle = 0; obj.fuel = 0; }
       blocks.push(obj);
     }
 
@@ -301,6 +378,7 @@
     // spray brown fizz-balls out of a tipped-over cola can
     function popCola(can) {
       can.popped = true;
+      stats.colaPops++;
       const count = 15 + Math.floor(Math.random() * 6); // 15 to 20 drops
       const cx = can.x + can.w / 2, cy = can.y + can.h / 2;
       for (let i = 0; i < count; i++) {
@@ -346,13 +424,14 @@
         drop.color = "#7f8c8d";                        // ...into gray stone
         drop.stone = true;                             // stone is fireproof — lava can't burn it
         drop.w = 18; drop.h = 18; drop.mass = 1;
+        stats.stone++;
       }
     }
 
     // lava sets things on fire; a burning thing puffs out rising flame triangles
     function ignite(o) {
-      if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop" || o.stone) return; // stone won't burn
-      if (!o.fire) o.fire = 60 + Math.floor(Math.random() * 300); // burns 1 to 6 seconds
+      if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop" || o.stone || o.kind === "jet") return; // stone & the jet won't burn
+      if (!o.fire) { o.fire = 60 + Math.floor(Math.random() * 300); stats.fires++; } // burns 1 to 6 seconds
     }
     function spawnFlame(o) {
       flames.push({
@@ -547,10 +626,12 @@
       goatBtn.classList.toggle("active", m === "spawn" && spawnKind === "goat");
       anvilBtn.classList.toggle("active", m === "spawn" && spawnKind === "anvil");
       planeBtn.classList.toggle("active", m === "spawn" && spawnKind === "plane");
+      birdBtn.classList.toggle("active", m === "spawn" && spawnKind === "bird");
       colaBtn.classList.toggle("active", m === "spawn" && spawnKind === "cola");
       spongeBtn.classList.toggle("active", m === "spawn" && spawnKind === "sponge");
       entityBtn.classList.toggle("active", m === "spawn" && spawnKind === "entity");
       gunBtn.classList.toggle("active", m === "spawn" && spawnKind === "gravgun");
+      jetBtn.classList.toggle("active", m === "spawn" && spawnKind === "jet");
       squareBtn.classList.toggle("active", m === "spawn" && spawnKind === "block");
       bucketBtn.classList.toggle("active", m === "bucket");
       vacBtn.classList.toggle("active", m === "vacuum");
@@ -562,10 +643,12 @@
     goatBtn.addEventListener("click", () => setMode("spawn", "goat"));
     anvilBtn.addEventListener("click", () => setMode("spawn", "anvil"));
     planeBtn.addEventListener("click", () => setMode("spawn", "plane"));
+    birdBtn.addEventListener("click", () => setMode("spawn", "bird"));
     colaBtn.addEventListener("click", () => setMode("spawn", "cola"));
     spongeBtn.addEventListener("click", () => setMode("spawn", "sponge"));
     entityBtn.addEventListener("click", () => setMode("spawn", "entity"));
     gunBtn.addEventListener("click", () => setMode("spawn", "gravgun"));
+    jetBtn.addEventListener("click", () => setMode("spawn", "jet"));
     let squareHoldTimer = null, squareHeld = false;
     squareBtn.addEventListener("mousedown", (e) => {
       if (e.button === 2) return;
@@ -588,6 +671,7 @@
     function boom(mx, my) {
       shake = 20;
       playBoom();
+      stats.booms++;
       for (const b of blocks) {
         const dx = b.x + b.w / 2 - mx;
         const dy = b.y + b.h / 2 - my;
@@ -638,7 +722,7 @@
           const d = Math.hypot(x - (b.x + b.w / 2), y - (b.y + b.h / 2));
           if (d < bestDist) { bestDist = d; best = b; }
         }
-        if (best && best.kind === "gravgun") held = (held === best ? null : best);
+        if (best && (best.kind === "gravgun" || best.kind === "jet")) held = (held === best ? null : best);
         else held = best;
         canvas.style.cursor = "grabbing";
       }
@@ -649,7 +733,7 @@
     }
     function pointerRelease() {
       pointerDown = false; draggingTank = false;
-      if (!held || held.kind !== "gravgun") held = null; // the gravity gun stays in your hand until you click it again
+      if (!held || (held.kind !== "gravgun" && held.kind !== "jet")) held = null; // carried tools stay in your hand until you click again
       if (mode === "grab") canvas.style.cursor = "grab";
     }
     canvas.addEventListener("mousedown", (e) => {
@@ -681,6 +765,7 @@
         else held.aim += dy * 0.005;                                                // aim the gun
         return;
       }
+      if (held && held.kind === "jet") { held.aim += dy * 0.005; return; } // aim the jet engine
       let best = null, bestDist = 70;
       for (const b of blocks) {
         const d = Math.hypot(cx - (b.x + b.w / 2), cy - (b.y + b.h / 2));
@@ -697,6 +782,7 @@
         if (held.beamHold) held.beamHold.angle += step; else held.aim += step;
         return;
       }
+      if (held && held.kind === "jet") { held.aim += step; return; }
       let best = null, bestDist = 90;
       for (const b of blocks) {
         const d = Math.hypot(mouse.x - (b.x + b.w / 2), mouse.y - (b.y + b.h / 2));
@@ -723,10 +809,12 @@
       { icon: "🐐", act: () => setMode("spawn", "goat") },
       { icon: "⚓", act: () => setMode("spawn", "anvil") },
       { icon: "✈️", act: () => setMode("spawn", "plane") },
+      { icon: "🐦", act: () => setMode("spawn", "bird") },
       { icon: "🥤", act: () => setMode("spawn", "cola") },
       { icon: "🧽", act: () => setMode("spawn", "sponge") },
       { icon: "⬛", act: () => setMode("spawn", "entity") },
       { icon: "🔫", act: () => setMode("spawn", "gravgun") },
+      { icon: "🚀", act: () => setMode("spawn", "jet") },
       { icon: "🟦", act: () => setMode("spawn", "block") },
       { icon: "🪣", act: () => setMode("bucket") },
       { icon: "🌀", act: () => setMode("vacuum") },
@@ -847,6 +935,13 @@
       for (const b of blocks) {
         if (b.captured) continue; // being eaten — the entity controls its position, skip normal physics
         b.vy += GRAVITY;
+        if (b.kind === "bird") { // birds fly: shrug off gravity, flap, and wander around
+          b.vy -= GRAVITY + 0.06;
+          b.vy += (Math.random() - 0.5) * 0.5;
+          b.vx += (Math.random() - 0.5) * 0.35;
+          b.vx = Math.max(-3, Math.min(3, b.vx));
+          b.vy = Math.max(-3, Math.min(2.2, b.vy));
+        }
         b.x += b.vx;
         b.y += b.vy;
         b.angle += b.spin;
@@ -909,7 +1004,7 @@
               prey.angle = Math.sin((t - 90) * 1.6) * 0.3;
             } else {
               // gulp — what it ate disappears
-              prey.dead = true; bite.done = true;
+              prey.dead = true; bite.done = true; stats.eaten++;
             }
           }
           b.eating = b.eating.filter(bite => !bite.done);
@@ -1054,6 +1149,60 @@
         }
       }
 
+      // jet engine: right-click sucks in blocks and burns them into a jet of fire
+      if (held && held.kind === "jet") {
+        const jet = held;
+        jet.angle = jet.aim;
+        const ex = jet.x + jet.w / 2, ey = jet.y + jet.h / 2;
+        if (rightDown) {
+          for (const o of blocks) { // intake: pull nearby solids in and swallow them as fuel
+            if (o === jet || o.dead || o.captured) continue;
+            if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+            const dx = ex - (o.x + o.w / 2), dy = ey - (o.y + o.h / 2);
+            const d = Math.hypot(dx, dy) || 0.001;
+            if (d < 200) {
+              o.vx += (dx / d) * 2; o.vy += (dy / d) * 2;
+              if (d < 26) {
+                if (o.kind === "bird") { // a bird in the intake blows the whole engine up!
+                  o.dead = true; boom(ex, ey);
+                  for (let f = 0; f < 30; f++) {
+                    const a = Math.random() * Math.PI * 2, sp = 3 + Math.random() * 6;
+                    flames.push({ x: ex, y: ey, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, size: 8 + Math.random() * 8, life: 25 + Math.floor(Math.random() * 30), color: LAVA_DROP_COLORS[Math.floor(Math.random() * 3)] });
+                  }
+                  for (const p of blocks) { if (p !== jet && !p.dead) { const dd = Math.hypot((p.x + p.w / 2) - ex, (p.y + p.h / 2) - ey); if (dd < 140) ignite(p); } }
+                  jet.dead = true; held = null; // the engine is destroyed
+                  break;
+                }
+                o.dead = true; jet.fuel = (jet.fuel || 0) + 25; // swallowed → becomes fuel
+              }
+            }
+          }
+          if (jet.fuel > 0 && !jet.dead) { // exhaust: shoot fire out the front, PUSH + ignite what's in the way
+            jet.fuel--;
+            const fx = ex + Math.cos(jet.aim) * jet.w * 0.6, fy = ey + Math.sin(jet.aim) * jet.w * 0.6;
+            for (let k = 0; k < 2; k++) {
+              const spread = (Math.random() - 0.5) * 0.5, sp = 5 + Math.random() * 4;
+              flames.push({
+                x: fx, y: fy,
+                vx: Math.cos(jet.aim + spread) * sp, vy: Math.sin(jet.aim + spread) * sp,
+                size: 7 + Math.random() * 6, life: 20 + Math.floor(Math.random() * 25),
+                color: LAVA_DROP_COLORS[Math.floor(Math.random() * LAVA_DROP_COLORS.length)],
+              });
+            }
+            for (const o of blocks) {
+              if (o === jet || o.dead) continue;
+              const dx = (o.x + o.w / 2) - fx, dy = (o.y + o.h / 2) - fy;
+              const dist = Math.hypot(dx, dy) || 0.001;
+              if (dist < 170 && (dx * Math.cos(jet.aim) + dy * Math.sin(jet.aim)) / dist > 0.5) {
+                ignite(o);
+                const force = 5 * (1 - dist / 170) / (o.mass || 1); // the blast shoves things away
+                o.vx += Math.cos(jet.aim) * force; o.vy += Math.sin(jet.aim) * force;
+              }
+            }
+          }
+        }
+      }
+
       // bucket: while held, pour out water (blue) or lava (orange/yellow/red) droplets
       if (mode === "bucket" && pointerDown) {
         const isLava = bucketLiquid === "lava";
@@ -1086,8 +1235,9 @@
                 b.kind = "block"; b.emoji = null;
                 b.color = colors[Math.floor(Math.random() * colors.length)];
                 b.limbs = []; b.activated = false; b.eating = [];
+                stats.defeated++;
               } else {
-                b.dead = true; addToTank(injectColorFor(b)); // swallowed — bank its color!
+                b.dead = true; addToTank(injectColorFor(b)); stats.vacuumed++; // swallowed — bank its color!
               }
             }
           }
@@ -1130,6 +1280,7 @@
 
       // remove everything that got swallowed or faded away (and any glue it made)
       if (blocks.some(b => b.dead)) {
+        for (const b of blocks) if (b.dead && b.kind === "block") stats.destroyed++; // count cleared blocks
         bonds = bonds.filter(bd => !bd.a.dead && !bd.b.dead);
         blocks = blocks.filter(b => !b.dead);
       }
@@ -1193,6 +1344,10 @@
           ctx.fillRect(b.w * 0.12, b.h / 2 - b.h * 0.28, b.w * 0.32, b.h * 0.28);
           ctx.fillStyle = "#ffd24a";                            // glowing core
           ctx.beginPath(); ctx.arc(b.w * 0.05, 0, 5, 0, Math.PI * 2); ctx.fill();
+        } else if (b.kind === "jet") {
+          ctx.fillStyle = "#6b7280"; ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);        // engine body
+          ctx.fillStyle = "#3a4048"; ctx.fillRect(-b.w / 2, -b.h / 2, b.w * 0.25, b.h);  // intake at the back
+          ctx.fillStyle = "#ff8a00"; ctx.beginPath(); ctx.arc(b.w * 0.42, 0, b.h * 0.35, 0, Math.PI * 2); ctx.fill(); // exhaust glow at the front
         } else {
           ctx.fillStyle = b.color;
           ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
@@ -1229,7 +1384,8 @@
       if (radialOpen) drawRadial();
     }
 
-    function loop() { update(); draw(); requestAnimationFrame(loop); }
+    function loop() { update(); draw(); updateQuests(); requestAnimationFrame(loop); }
+    newLevel();
     loop();
   </script>
 </body>
