@@ -65,7 +65,10 @@
     <button id="anvilBtn" class="btn">⚓ ANVIL</button>
     <button id="planeBtn" class="btn">✈️ PLANE</button>
     <button id="birdBtn" class="btn">🐦 BIRD</button>
+    <button id="heliBtn" class="btn">🚁 HELI</button>
     <button id="colaBtn" class="btn">🥤 COLA</button>
+    <button id="comboBtn" class="btn">🔗 COMBO</button>
+    <button id="soulBtn" class="btn">👻 SOUL</button>
     <button id="spongeBtn" class="btn">🧽 SPONGE</button>
     <button id="entityBtn" class="btn">⬛ ENTITY</button>
     <button id="gunBtn" class="btn">🔫 GRAV GUN</button>
@@ -76,6 +79,9 @@
     <button id="needleBtn" class="btn">💉 NEEDLE</button>
     <button id="stickBtn" class="btn">🔗 STICK</button>
     <button id="cannibalBtn" class="btn">🩸 CANNIBALISM</button>
+    <button id="takeoffBtn" class="btn">🛫 TAKEOFF</button>
+    <button id="landBtn" class="btn">🛬 LAND</button>
+    <button id="pauseBtn" class="btn">⏸️ PAUSE</button>
   </div>
   <div id="rotctl">
     <button id="rotL" class="rbtn">↺</button>
@@ -116,7 +122,10 @@
     const anvilBtn = document.getElementById("anvilBtn");
     const planeBtn = document.getElementById("planeBtn");
     const birdBtn = document.getElementById("birdBtn");
+    const heliBtn = document.getElementById("heliBtn");
     const colaBtn = document.getElementById("colaBtn");
+    const comboBtn = document.getElementById("comboBtn");
+    const soulBtn = document.getElementById("soulBtn");
     const spongeBtn = document.getElementById("spongeBtn");
     const entityBtn = document.getElementById("entityBtn");
     const gunBtn = document.getElementById("gunBtn");
@@ -126,6 +135,9 @@
     const vacBtn = document.getElementById("vacBtn");
     const needleBtn = document.getElementById("needleBtn");
     const cannibalBtn = document.getElementById("cannibalBtn");
+    const takeoffBtn = document.getElementById("takeoffBtn");
+    const landBtn = document.getElementById("landBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
     const tankEl = document.getElementById("tank");
     const tankPos = { x: 90, y: null }; // where the vacuum bag sits (you can drag it)
     let draggingTank = false;
@@ -154,6 +166,7 @@
     const LAVA_DROP_COLORS = ["#ffa502", "#feca57", "#ff4757"]; // orange / yellow / red lava blobs
     let bucketLiquid = "water";    // what the bucket pours: "water" or "lava"
     let cannibalism = false;       // can entities eat each other?
+    let paused = false;            // freeze the whole game
     let level = 0, levelComplete = false, quests = [];
     const stats = { booms: 0, destroyed: 0, stone: 0, fires: 0, eaten: 0, colaPops: 0, vacuumed: 0, defeated: 0 };
     const mouse = { x: 0, y: 0 };
@@ -244,6 +257,96 @@
         g.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.12 + 0.25);
         o.connect(g); g.connect(ac.destination); o.start(now + i * 0.12); o.stop(now + i * 0.12 + 0.26);
       });
+    }
+    function playBleat() { // a goat "maaah" — random length between 0.5s and 2s
+      const ac = getAudio(), now = ac.currentTime;
+      const dur = 0.5 + Math.random() * 1.5;
+      const base = 180 + Math.random() * 340; // random pitch each bleat — low (deep) to high (squeaky)
+      const o = ac.createOscillator(); o.type = "sawtooth";
+      o.frequency.setValueAtTime(base, now);
+      o.frequency.linearRampToValueAtTime(base * 0.85, now + dur);
+      const lfo = ac.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 22;
+      const lfoGain = ac.createGain(); lfoGain.gain.value = 35;
+      lfo.connect(lfoGain); lfoGain.connect(o.frequency); // vibrato = the bleaty wobble
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.12 * BOOM_VOLUME, now + 0.03);
+      g.gain.setValueAtTime(0.12 * BOOM_VOLUME, now + Math.max(0.05, dur - 0.08)); // hold the note
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.connect(g); g.connect(ac.destination);
+      o.start(now); o.stop(now + dur + 0.02); lfo.start(now); lfo.stop(now + dur + 0.02);
+    }
+    function playChirp() { // a quick bird chirp
+      const ac = getAudio(), now = ac.currentTime;
+      const o = ac.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(2600, now);
+      o.frequency.exponentialRampToValueAtTime(3900, now + 0.05);
+      o.frequency.exponentialRampToValueAtTime(2400, now + 0.12);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.1 * BOOM_VOLUME, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+      o.connect(g); g.connect(ac.destination);
+      o.start(now); o.stop(now + 0.14);
+    }
+    let jetNodes = null;
+    function updateJetDrone(active) { // a steady jet-engine hum while flying planes exist
+      if (!audioCtx) return;
+      if (!jetNodes) {
+        const g = audioCtx.createGain(); g.gain.value = 0; g.connect(audioCtx.destination);
+        const o1 = audioCtx.createOscillator(); o1.type = "sawtooth"; o1.frequency.value = 68;
+        const o2 = audioCtx.createOscillator(); o2.type = "sawtooth"; o2.frequency.value = 225;
+        const f = audioCtx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 750;
+        o1.connect(f); o2.connect(f); f.connect(g);
+        o1.start(); o2.start();
+        jetNodes = { g };
+      }
+      jetNodes.g.gain.setTargetAtTime(active ? 0.05 * BOOM_VOLUME : 0, audioCtx.currentTime, 0.1);
+    }
+    let goatScreamNodes = null;
+    function updateGoatScream(active) { // a medium-pitched scream while a goat is charging
+      if (!audioCtx) return;
+      if (!goatScreamNodes) {
+        const g = audioCtx.createGain(); g.gain.value = 0; g.connect(audioCtx.destination);
+        const o = audioCtx.createOscillator(); o.type = "sawtooth"; o.frequency.value = 560;
+        const lfo = audioCtx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 14;
+        const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 45;
+        lfo.connect(lfoGain); lfoGain.connect(o.frequency);
+        o.connect(g); o.start(); lfo.start();
+        goatScreamNodes = { g };
+      }
+      goatScreamNodes.g.gain.setTargetAtTime(active ? 0.13 * BOOM_VOLUME : 0, audioCtx.currentTime, 0.02);
+    }
+    let heliNodes = null;
+    function updateHeliSound(active) { // a "whop whop whop" chopper sound while helicopters exist
+      if (!audioCtx) return;
+      if (!heliNodes) {
+        const g = audioCtx.createGain(); g.gain.value = 0; g.connect(audioCtx.destination);
+        const o = audioCtx.createOscillator(); o.type = "sawtooth"; o.frequency.value = 120;
+        const f = audioCtx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 500;
+        o.connect(f); f.connect(g);
+        const chop = audioCtx.createOscillator(); chop.type = "square"; chop.frequency.value = 9; // rotor chop
+        const chopGain = audioCtx.createGain(); chopGain.gain.value = 0;
+        chop.connect(chopGain); chopGain.connect(g.gain);
+        o.start(); chop.start();
+        heliNodes = { g, chopGain };
+      }
+      heliNodes.g.gain.setTargetAtTime(active ? 0.06 * BOOM_VOLUME : 0, audioCtx.currentTime, 0.05);
+      heliNodes.chopGain.gain.setTargetAtTime(active ? 0.05 * BOOM_VOLUME : 0, audioCtx.currentTime, 0.05);
+    }
+    let alarmNodes = null;
+    function updateFuelAlarm(active) { // "woop woop" terrain-alarm while an aircraft burns fuel
+      if (!audioCtx) return;
+      if (!alarmNodes) {
+        const g = audioCtx.createGain(); g.gain.value = 0; g.connect(audioCtx.destination);
+        const o = audioCtx.createOscillator(); o.type = "sine"; o.frequency.value = 500;
+        const lfo = audioCtx.createOscillator(); lfo.type = "sawtooth"; lfo.frequency.value = 2.2; // ~2 woops/sec
+        const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 320; // pitch sweep depth
+        lfo.connect(lfoGain); lfoGain.connect(o.frequency);
+        o.connect(g); o.start(); lfo.start();
+        alarmNodes = { g };
+      }
+      alarmNodes.g.gain.setTargetAtTime(active ? 0.08 * BOOM_VOLUME : 0, audioCtx.currentTime, 0.05);
     }
     // ===========================================================
 
@@ -343,7 +446,17 @@
       if (kind === "goat")  { w = 46; h = 46; mass = 2; emoji = "🐐"; }
       if (kind === "anvil") { w = 52; h = 44; mass = 8; }        // anvil = super heavy
       if (kind === "plane") { w = 60; h = 60; mass = 1.5; emoji = "✈️"; }
+      if (kind === "helicopter") { w = 56; h = 56; mass = 1.5; emoji = "🚁"; } // like a plane; jet-combine it to fly
       if (kind === "bird") { w = 34; h = 34; mass = 0.6; emoji = "🐦"; } // flies around; blows up if a jet sucks it in
+      if (kind === "combo") { w = 32; h = 32; mass = 0.8; emoji = "🔗"; } // ropes 2 things and fuses known combos
+      if (kind === "flyingplane") { w = 60; h = 60; mass = 1; emoji = "✈️"; } // jet + plane = a plane that flies itself
+      if (kind === "flyinghelicopter") { w = 56; h = 56; mass = 1; emoji = "🚁"; } // jet + helicopter = a flying chopper
+      if (kind === "seat") { w = 30; h = 30; mass = 0.6; emoji = "💺"; }        // aircraft debris (fireproof)
+      if (kind === "landinggear") { w = 30; h = 30; mass = 0.8; emoji = "🛞"; } // aircraft debris (fireproof)
+      if (kind === "tire") { w = 26; h = 26; mass = 0.7; }                       // drawn tire debris
+      if (kind === "propeller") { w = 44; h = 12; mass = 0.5; }                   // drawn propeller debris
+      if (kind === "soul") { w = 30; h = 30; mass = 0.5; emoji = "👻"; } // combine with a goat to make a skittish jumping goat
+      if (kind === "soulgoat") { w = 46; h = 46; mass = 1; emoji = "🐐"; } // hops around, flees everything but souls & goats
       if (kind === "cola")  { w = 34; h = 54; mass = 2; }        // drawn as a can; tips over and fizzes
       if (kind === "sponge") { w = 44; h = 34; mass = 1.5; emoji = "🧽"; } // soaks up liquids it touches
       if (kind === "entity") { w = 40; h = 40; mass = 2; } // black square that grows writhing limbs when touched
@@ -358,7 +471,12 @@
       if (kind === "cola") obj.popped = false; // hasn't fizzed yet
       if (kind === "entity") { obj.activated = false; obj.growTimer = 0; obj.limbs = []; obj.eating = []; }
       if (kind === "gravgun") { obj.aim = -Math.PI / 2; obj.angle = -Math.PI / 2; obj.beamHold = null; obj.beamDist = 120; }
-      if (kind === "jet") { obj.aim = 0; obj.angle = 0; obj.fuel = 0; }
+      if (kind === "jet") { obj.aim = 0; obj.angle = 0; obj.fuel = 0; obj.boost = 0; }
+      if (kind === "combo") obj.stuck = [];
+      if (kind === "helicopter") obj.vx = 6;
+      if (kind === "flyingplane") { obj.vx = 8; obj.fuel = 0; obj.flying = false; }       // parks until you press TAKEOFF
+      if (kind === "flyinghelicopter") { obj.vx = 5; obj.fuel = 0; obj.flying = false; }
+      if (kind === "seat" || kind === "landinggear" || kind === "tire" || kind === "propeller") obj.fireproof = true;
       blocks.push(obj);
     }
 
@@ -428,9 +546,70 @@
       }
     }
 
+    // ===== JAKE'S COMBOS — add pairs here! "kindA+kindB" (alphabetical) -> result kind =====
+    const COMBOS = { // simple 2-item recipes (aircraft PARTS use the assembler below instead)
+      "jet+plane": "flyingplane",
+      "helicopter+jet": "flyinghelicopter",
+      "goat+soul": "soulgoat",
+      "plane+propeller": "helicopter", // add a propeller to a built plane = helicopter
+    };
+    // a combo block ropes onto 2 things, then fuses them if they're a known recipe
+    const AIRCRAFT_PARTS = ["jet", "seat", "tire", "landinggear", "propeller"];
+    function isPart(k) { return AIRCRAFT_PARTS.indexOf(k) !== -1; }
+    function ropeTo(combo, other) {
+      const dx = (other.x + other.w / 2) - (combo.x + combo.w / 2);
+      const dy = (other.y + other.h / 2) - (combo.y + combo.h / 2);
+      bonds.push({ a: combo, b: other, rest: Math.hypot(dx, dy), stiff: true });
+    }
+    function comboStick(combo, other) {
+      if (other.kind === "combo") return;
+      if (other.kind === "water" || other.kind === "lava" || other.kind === "coladrop") return;
+      if (combo.stuck.includes(other)) return;
+      // ASSEMBLY MODE (started by roping a raw part): keep collecting 1 of each part, don't vanish
+      const assembling = combo.stuck.length > 0 ? isPart(combo.stuck[0].kind) : isPart(other.kind);
+      if (assembling) {
+        if (!isPart(other.kind)) return; // only aircraft parts while assembling
+        combo.stuck.push(other);
+        ropeTo(combo, other);
+        const have = {};
+        for (const p of combo.stuck) have[p.kind] = (have[p.kind] || 0) + 1;
+        if (have.jet && have.seat && have.tire && have.landinggear) { // a full aircraft!
+          buildAircraft(combo, have.propeller ? "helicopter" : "plane");
+        }
+        return;
+      }
+      // NORMAL 2-item combos
+      if (combo.stuck.length >= 2) return;
+      combo.stuck.push(other);
+      ropeTo(combo, other);
+      if (combo.stuck.length === 2) tryCombine(combo);
+    }
+    function buildAircraft(combo, result) {
+      let mx = 0, my = 0;
+      for (const p of combo.stuck) { mx += p.x + p.w / 2; my += p.y + p.h / 2; p.dead = true; }
+      mx /= combo.stuck.length; my /= combo.stuck.length;
+      combo.dead = true;
+      addObject(mx, my, result);
+    }
+    function tryCombine(combo) {
+      const a = combo.stuck[0], b = combo.stuck[1];
+      const key = [a.kind, b.kind].sort().join("+");
+      const result = COMBOS[key];
+      const mx = (a.x + a.w / 2 + b.x + b.w / 2) / 2;
+      const my = (a.y + a.h / 2 + b.y + b.h / 2) / 2;
+      if (result) {
+        a.dead = true; b.dead = true; combo.dead = true; // ingredients + block are used up
+        addObject(mx, my, result);
+      } else {
+        // not a recipe — just leave the two roped together and let the block fizzle
+        bonds.push({ a: a, b: b, rest: Math.hypot((b.x + b.w / 2) - (a.x + a.w / 2), (b.y + b.h / 2) - (a.y + a.h / 2)), stiff: true });
+        combo.dead = true;
+      }
+    }
+
     // lava sets things on fire; a burning thing puffs out rising flame triangles
     function ignite(o) {
-      if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop" || o.stone || o.kind === "jet") return; // stone & the jet won't burn
+      if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop" || o.stone || o.kind === "jet" || o.fireproof) return; // stone, jet & debris won't burn
       if (!o.fire) { o.fire = 60 + Math.floor(Math.random() * 300); stats.fires++; } // burns 1 to 6 seconds
     }
     function spawnFlame(o) {
@@ -443,6 +622,24 @@
         life: 60 + Math.floor(Math.random() * 300),  // each triangle lasts 1 to 6 seconds
         color: LAVA_DROP_COLORS[Math.floor(Math.random() * LAVA_DROP_COLORS.length)],
       });
+    }
+    function kaboom(x, y) { // a big fiery explosion at a point
+      boom(x, y);
+      for (let f = 0; f < 30; f++) {
+        const a = Math.random() * Math.PI * 2, sp = 3 + Math.random() * 6;
+        flames.push({ x: x, y: y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, size: 8 + Math.random() * 8, life: 25 + Math.floor(Math.random() * 30), color: LAVA_DROP_COLORS[Math.floor(Math.random() * 3)] });
+      }
+    }
+    function isAircraft(k) { return k === "plane" || k === "flyingplane" || k === "helicopter" || k === "flyinghelicopter"; }
+    function spawnAircraftParts(x, y, kind) { // scatter fireproof parts (helicopters drop propellers, planes don't)
+      const parts = ["tire", "tire", "jet", "seat", "landinggear"];
+      if (kind === "helicopter" || kind === "flyinghelicopter") parts.push("propeller", "propeller");
+      for (const p of parts) {
+        addObject(x + (Math.random() - 0.5) * 24, y + (Math.random() - 0.5) * 24, p);
+        const o = blocks[blocks.length - 1];
+        const a = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 5;
+        o.vx = Math.cos(a) * sp; o.vy = Math.sin(a) * sp - 3; o.spin = (Math.random() - 0.5) * 0.3;
+      }
     }
 
     // draw a little red cola can
@@ -627,7 +824,10 @@
       anvilBtn.classList.toggle("active", m === "spawn" && spawnKind === "anvil");
       planeBtn.classList.toggle("active", m === "spawn" && spawnKind === "plane");
       birdBtn.classList.toggle("active", m === "spawn" && spawnKind === "bird");
+      heliBtn.classList.toggle("active", m === "spawn" && spawnKind === "helicopter");
       colaBtn.classList.toggle("active", m === "spawn" && spawnKind === "cola");
+      comboBtn.classList.toggle("active", m === "spawn" && spawnKind === "combo");
+      soulBtn.classList.toggle("active", m === "spawn" && spawnKind === "soul");
       spongeBtn.classList.toggle("active", m === "spawn" && spawnKind === "sponge");
       entityBtn.classList.toggle("active", m === "spawn" && spawnKind === "entity");
       gunBtn.classList.toggle("active", m === "spawn" && spawnKind === "gravgun");
@@ -644,7 +844,10 @@
     anvilBtn.addEventListener("click", () => setMode("spawn", "anvil"));
     planeBtn.addEventListener("click", () => setMode("spawn", "plane"));
     birdBtn.addEventListener("click", () => setMode("spawn", "bird"));
+    heliBtn.addEventListener("click", () => setMode("spawn", "helicopter"));
     colaBtn.addEventListener("click", () => setMode("spawn", "cola"));
+    comboBtn.addEventListener("click", () => setMode("spawn", "combo"));
+    soulBtn.addEventListener("click", () => setMode("spawn", "soul"));
     spongeBtn.addEventListener("click", () => setMode("spawn", "sponge"));
     entityBtn.addEventListener("click", () => setMode("spawn", "entity"));
     gunBtn.addEventListener("click", () => setMode("spawn", "gravgun"));
@@ -667,6 +870,12 @@
     bucketBtn.addEventListener("click", () => setMode("bucket"));
     function toggleCannibal() { cannibalism = !cannibalism; cannibalBtn.classList.toggle("active", cannibalism); }
     cannibalBtn.addEventListener("click", toggleCannibal);
+    function doTakeoff() { for (const b of blocks) if ((b.kind === "flyingplane" || b.kind === "flyinghelicopter") && (b.fuel || 0) > 0) { b.flying = true; b.landing = false; if (b.kind === "flyinghelicopter") b.takingoff = 90; } }
+    function doLand() { for (const b of blocks) if (b.kind === "flyingplane" || b.kind === "flyinghelicopter") b.landing = true; }
+    function togglePause() { paused = !paused; pauseBtn.classList.toggle("active", paused); }
+    takeoffBtn.addEventListener("click", doTakeoff);
+    landBtn.addEventListener("click", doLand);
+    pauseBtn.addEventListener("click", togglePause);
 
     function boom(mx, my) {
       shake = 20;
@@ -680,6 +889,10 @@
         b.vx += (dx / dist) * force / b.mass; // heavy things barely budge
         b.vy += (dy / dist) * force / b.mass;
         b.spin += (Math.random() - 0.5) * 0.4;
+        if (b.kind === "soulgoat" && dist < 400) { // startled by the noise — leaps away even mid-air
+          b.vy = -4; b.vx = (dx / dist) * 5; b.jumpT = 20;
+          if (Math.random() < 0.5) playBleat();
+        }
       }
     }
 
@@ -711,8 +924,14 @@
             if (d < td) { td = d; target = b; }
           }
           if (--tankColors[c] <= 0) delete tankColors[c];
-          if (target) { target.color = c; target.kind = "block"; target.emoji = null; }
-          else { blocks.push({ x: x - 16, y: y - 16, w: 32, h: 32, vx: 0, vy: -2, angle: 0, spin: 0, color: c, mass: 1, kind: "block", emoji: null }); }
+          if (target && (target.kind === "jet" || target.kind === "flyingplane" || target.kind === "flyinghelicopter")) {
+            target.fuel = (target.fuel || 0) + 120; // inject the tank's blocks as FUEL
+            for (let f = 0; f < 5; f++) flames.push({ x: target.x + target.w / 2, y: target.y + target.h / 2, vx: (Math.random() - 0.5) * 3, vy: -1 - Math.random() * 2, size: 6 + Math.random() * 4, life: 20 + Math.floor(Math.random() * 15), color: LAVA_DROP_COLORS[Math.floor(Math.random() * 3)] });
+          } else if (target) {
+            target.color = c; target.kind = "block"; target.emoji = null; // paint it into a colored square
+          } else {
+            blocks.push({ x: x - 16, y: y - 16, w: 32, h: 32, vx: 0, vy: -2, angle: 0, spin: 0, color: c, mass: 1, kind: "block", emoji: null });
+          }
           ejectTankSquare();
           updateTankDisplay();
         }
@@ -810,7 +1029,10 @@
       { icon: "⚓", act: () => setMode("spawn", "anvil") },
       { icon: "✈️", act: () => setMode("spawn", "plane") },
       { icon: "🐦", act: () => setMode("spawn", "bird") },
+      { icon: "🚁", act: () => setMode("spawn", "helicopter") },
       { icon: "🥤", act: () => setMode("spawn", "cola") },
+      { icon: "🔗", act: () => setMode("spawn", "combo") },
+      { icon: "👻", act: () => setMode("spawn", "soul") },
       { icon: "🧽", act: () => setMode("spawn", "sponge") },
       { icon: "⬛", act: () => setMode("spawn", "entity") },
       { icon: "🔫", act: () => setMode("spawn", "gravgun") },
@@ -821,6 +1043,9 @@
       { icon: "💉", act: () => setMode("needle") },
       { icon: "🔗", act: () => toggleStick() },
       { icon: "🩸", act: () => toggleCannibal() },
+      { icon: "🛫", act: () => doTakeoff() },
+      { icon: "🛬", act: () => doLand() },
+      { icon: "⏸️", act: () => togglePause() },
       { icon: "🔄", act: () => buildTower() },
       { icon: "🏆", act: () => resetKeepSurvivors() },
     ];
@@ -931,7 +1156,7 @@
 
     function update() {
       const floor = H - 20;
-      let maxSpeed = 0;
+      let maxSpeed = 0, jetPlaneActive = false, goatCharging = false, heliActive = false, fuelBurning = false;
       for (const b of blocks) {
         if (b.captured) continue; // being eaten — the entity controls its position, skip normal physics
         b.vy += GRAVITY;
@@ -941,6 +1166,143 @@
           b.vx += (Math.random() - 0.5) * 0.35;
           b.vx = Math.max(-3, Math.min(3, b.vx));
           b.vy = Math.max(-3, Math.min(2.2, b.vy));
+          if (Math.random() < 0.004) playChirp(); // occasional chirp
+        }
+        if (b.kind === "helicopter" || b.kind === "flyinghelicopter") { b.angle = 0; b.spin = 0; } // choppers stay upright
+        if (b.kind === "flyingplane" || b.kind === "flyinghelicopter") { // jet-powered aircraft
+          let grounded = (b.y + b.h) >= floor - 2; // touching the floor or a block below?
+          if (!grounded) {
+            for (const o of blocks) {
+              if (o === b || o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+              if ((b.x + b.w / 2) > o.x && (b.x + b.w / 2) < o.x + o.w && (b.y + b.h) >= o.y - 2 && (b.y + b.h) <= o.y + 12) { grounded = true; break; }
+            }
+          }
+          if (b.landing) { // LAND — engine/rotor keeps running until it touches the ground
+            if (b.kind === "flyinghelicopter") heliActive = true; else jetPlaneActive = true;
+            if (b.kind === "flyinghelicopter") {
+              b.vx = 0; b.vy = 1.2; // helicopter: stop instantly, straight down at 2 blocks/sec (no forward/back)
+            } else {
+              b.vx = (b.vx >= 0 ? 1 : -1) * 3; b.vy = 0.6; // plane: keep gliding forward, sink ~1 block/sec
+              b.angle = Math.atan2(b.vy, b.vx);
+            }
+            if (grounded) { b.landing = false; b.flying = false; b.vx = 0; b.vy = 0; }
+          } else if (b.flying && (b.fuel || 0) > 0) { // powered flight after TAKEOFF while fueled
+            b.fuel--;
+            if (b.fuel <= 150) fuelBurning = true; // alarm once the bar is half-empty, until it lands/parks/runs dry
+            b.vy -= GRAVITY;
+            if (b.kind === "flyinghelicopter") {
+              heliActive = true; // rotor sound while running
+              if ((b.takingoff || 0) > 0) { b.takingoff--; b.vx = 0; b.vy = -1.2; } // rise straight up at 2 blocks/sec
+              else { b.vy = 0; b.vx = (Math.abs(b.vx) < 0.1 ? 3 : (b.vx >= 0 ? 1 : -1) * 3); } // then hover level, drift sideways
+            } else {
+              jetPlaneActive = true; // jet hum only while a plane is running
+              const sp = Math.hypot(b.vx, b.vy);
+              if (sp > 0.1) { b.vx = b.vx / sp * 6; b.vy = b.vy / sp * 6; } else { b.vx = 6; }
+              b.angle = Math.atan2(b.vy, b.vx); // planes bank into their heading
+            }
+            flames.push({ x: b.x + b.w / 2, y: b.y + b.h / 2, vx: -b.vx * 0.3, vy: -b.vy * 0.3, size: 5 + Math.random() * 4, life: 12 + Math.floor(Math.random() * 10), color: LAVA_DROP_COLORS[Math.floor(Math.random() * 3)] });
+          } else if (b.flying) { // out of fuel — keep moving forward but glide down slowly, then land
+            b.vy -= GRAVITY;
+            b.vy = Math.min(0.6, b.vy + 0.02); // gentle ~1-block-per-second glide down
+            b.vx *= 0.997;                      // keep most of its forward speed
+            if (b.kind === "flyingplane") b.angle = Math.atan2(b.vy, b.vx);
+            if (grounded) { b.flying = false; b.vx = 0; b.vy = 0; }
+          }
+        }
+        if (b.kind === "soulgoat") { // charges & headbutts, panics, hops (toward other goats), bleats
+          if (Math.random() < 0.003) playBleat(); // occasional bleat
+          const feetY = b.y + b.h, gx = b.x + b.w / 2;
+          if (b.charging) {
+            // CHARGE: lunge fast and scream until it smacks something (or whiffs)
+            goatCharging = true;
+            b.vx = b.chargeDX * 9; b.vy = b.chargeDY * 9;
+            b.chargeT = (b.chargeT || 0) + 1;
+            let hit = null;
+            for (const o of blocks) {
+              if (o === b || o.kind === "soul" || o.kind === "goat" || o.kind === "soulgoat") continue;
+              if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+              const d = Math.hypot((o.x + o.w / 2) - gx, (o.y + o.h / 2) - (b.y + b.h / 2));
+              if (d < 42) { hit = o; break; }
+            }
+            const hitWall = (b.chargeDX < 0 && b.x <= 2) || (b.chargeDX > 0 && b.x + b.w >= W - 2);
+            if (hit) { // SMACK — it goes flying, goat recoils a block back
+              const rx = (hit.x + hit.w / 2) - gx, ry = (hit.y + hit.h / 2) - (b.y + b.h / 2), rd = Math.hypot(rx, ry) || 1;
+              hit.vx += (rx / rd) * 20 / (hit.mass || 1);
+              hit.vy += (ry / rd) * 20 / (hit.mass || 1) - 4;
+              b.vx = -(rx / rd) * 5; b.vy = -3;
+              b.charging = false; b.headbuttT = 60 + Math.floor(Math.random() * 3540);
+            } else if (b.chargeT > 45 || hitWall) { // missed — reset and wait to try again
+              b.charging = false; b.headbuttT = 60 + Math.floor(Math.random() * 3540);
+            }
+          } else {
+            // eat a thing it's touching — never souls; never other goats unless cannibalism is on
+            b.eatCD = (b.eatCD || 0) - 1;
+            if (b.eatCD <= 0) {
+              for (const o of blocks) {
+                if (o === b || o.kind === "soul") continue;
+                if ((o.kind === "goat" || o.kind === "soulgoat") && !cannibalism) continue;
+                if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+                const d = Math.hypot((o.x + o.w / 2) - gx, (o.y + o.h / 2) - (b.y + b.h / 2));
+                if (d < 34) { o.dead = true; b.eatCD = 30; if (Math.random() < 0.4) playBleat(); break; }
+              }
+            }
+            // headbutt timer: every 1–60s, start a screaming charge at the nearest thing
+            if (b.headbuttT === undefined) b.headbuttT = 60 + Math.floor(Math.random() * 3540);
+            if (--b.headbuttT <= 0) {
+              let target = null, td = 320;
+              for (const o of blocks) {
+                if (o === b || o.kind === "soul" || o.kind === "goat" || o.kind === "soulgoat") continue;
+                if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+                const d = Math.hypot((o.x + o.w / 2) - gx, (o.y + o.h / 2) - (b.y + b.h / 2));
+                if (d < td) { td = d; target = o; }
+              }
+              const dx = target ? (target.x + target.w / 2) - gx : (b.vx >= 0 ? 1 : -1);
+              const dy = target ? (target.y + target.h / 2) - (b.y + b.h / 2) : 0;
+              const dd = Math.hypot(dx, dy) || 1;
+              b.chargeDX = dx / dd; b.chargeDY = dy / dd; b.charging = true; b.chargeT = 0;
+            }
+            // hopping (only while not charging)
+            let grounded = feetY >= floor - 3;
+            if (!grounded) {
+              for (const o of blocks) {
+                if (o === b || o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+                if (gx > o.x && gx < o.x + o.w && feetY >= o.y - 4 && feetY <= o.y + 10) { grounded = true; break; }
+              }
+            }
+            if (grounded) {
+              b.jumpT = (b.jumpT || 0) - 1;
+              if (b.jumpT <= 0) {
+                let threat = null, td = 240;
+                for (const o of blocks) {
+                  if (o === b || o.kind === "soul" || o.kind === "goat" || o.kind === "soulgoat") continue;
+                  if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+                  const d = Math.hypot((o.x + o.w / 2) - gx, (o.y + o.h / 2) - (b.y + b.h / 2));
+                  const scary = (o.y + o.h >= floor - 14 && Math.hypot(o.vx, o.vy) > 2.5) || d < 60;
+                  if (scary && d < td) { td = d; threat = o; }
+                }
+                if (threat) { // SCARED — big hop away
+                  const dir = gx - (threat.x + threat.w / 2) >= 0 ? 1 : -1;
+                  b.vy = -4; b.vx = dir * (1.6 + Math.random() * 1.6); b.jumpT = 25;
+                } else {
+                  // calm — hop toward the nearest other goat if there is one, else a random little hop
+                  let mate = null, md = 1e9;
+                  for (const o of blocks) {
+                    if (o === b || (o.kind !== "goat" && o.kind !== "soulgoat")) continue;
+                    const d = Math.hypot((o.x + o.w / 2) - gx, (o.y + o.h / 2) - (b.y + b.h / 2));
+                    if (d < md) { md = d; mate = o; }
+                  }
+                  const dir = mate ? ((mate.x + mate.w / 2) - gx >= 0 ? 1 : -1) : (Math.random() < 0.5 ? -1 : 1);
+                  b.vy = -3; b.vx = dir * (0.5 + Math.random() * 0.8); b.jumpT = 60;
+                }
+              }
+            }
+          }
+        }
+        if (b.kind === "soul") { // souls float like little ghosts (no gravity, gentle drift)
+          b.vy -= GRAVITY + 0.02;
+          b.vx += (Math.random() - 0.5) * 0.2;
+          b.vy += (Math.random() - 0.5) * 0.2;
+          b.vx *= 0.96; b.vy *= 0.96;
         }
         b.x += b.vx;
         b.y += b.vy;
@@ -1090,6 +1452,18 @@
             // cola drops glue onto whatever they bump into
             if (a.kind === "coladrop") stickTo(a, b);
             else if (b.kind === "coladrop") stickTo(b, a);
+            // combo block ropes onto what it touches (fuses 2 into a combo)
+            if (a.kind === "combo") comboStick(a, b);
+            else if (b.kind === "combo") comboStick(b, a);
+            // aircraft blow up when they touch each other or hit a bird (and scatter parts)
+            const aAir = isAircraft(a.kind), bAir = isAircraft(b.kind);
+            if ((aAir && bAir) || (aAir && b.kind === "bird") || (bAir && a.kind === "bird")) {
+              const cx = (a.x + a.w / 2 + b.x + b.w / 2) / 2, cy = (a.y + a.h / 2 + b.y + b.h / 2) / 2;
+              kaboom(cx, cy);
+              if (aAir) spawnAircraftParts(cx, cy, a.kind);
+              if (bAir) spawnAircraftParts(cx, cy, b.kind);
+              a.dead = true; b.dead = true;
+            }
             // water and lava paint any blank white square they touch
             if (a.kind === "water" || a.kind === "lava") paintBlank(a, b);
             else if (b.kind === "water" || b.kind === "lava") paintBlank(b, a);
@@ -1105,6 +1479,9 @@
             // the entity wakes up when anything touches it
             if (a.kind === "entity") a.activated = true;
             if (b.kind === "entity") b.activated = true;
+            // a soul brings a plain goat to life — turns it into a soul-goat
+            if (a.kind === "soul" && b.kind === "goat") { b.kind = "soulgoat"; a.dead = true; }
+            else if (b.kind === "soul" && a.kind === "goat") { a.kind = "soulgoat"; b.dead = true; }
           }
         }
       }
@@ -1157,7 +1534,7 @@
         if (rightDown) {
           for (const o of blocks) { // intake: pull nearby solids in and swallow them as fuel
             if (o === jet || o.dead || o.captured) continue;
-            if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+            if (o.kind === "lava" || o.kind === "coladrop") continue; // water CAN go in — it's the boost, not fuel
             const dx = ex - (o.x + o.w / 2), dy = ey - (o.y + o.h / 2);
             const d = Math.hypot(dx, dy) || 0.001;
             if (d < 200) {
@@ -1173,19 +1550,26 @@
                   jet.dead = true; held = null; // the engine is destroyed
                   break;
                 }
-                o.dead = true; jet.fuel = (jet.fuel || 0) + 25; // swallowed → becomes fuel
+                o.dead = true;
+                if (o.kind === "water") jet.boost = (jet.boost || 0) + 30; // water = nitrous boost (useless without fuel)
+                else jet.fuel = (jet.fuel || 0) + 25; // solid blocks = fuel
               }
             }
           }
           if (jet.fuel > 0 && !jet.dead) { // exhaust: shoot fire out the front, PUSH + ignite what's in the way
             jet.fuel--;
+            const boosted = (jet.boost || 0) > 0; // water boost = bigger, hotter, farther fire
+            if (boosted) jet.boost--;
+            const range = boosted ? 260 : 170;
+            const puffs = boosted ? 5 : 2;
+            const pushMul = boosted ? 2.2 : 1;
             const fx = ex + Math.cos(jet.aim) * jet.w * 0.6, fy = ey + Math.sin(jet.aim) * jet.w * 0.6;
-            for (let k = 0; k < 2; k++) {
-              const spread = (Math.random() - 0.5) * 0.5, sp = 5 + Math.random() * 4;
+            for (let k = 0; k < puffs; k++) {
+              const spread = (Math.random() - 0.5) * 0.5, sp = (boosted ? 8 : 5) + Math.random() * 4;
               flames.push({
                 x: fx, y: fy,
                 vx: Math.cos(jet.aim + spread) * sp, vy: Math.sin(jet.aim + spread) * sp,
-                size: 7 + Math.random() * 6, life: 20 + Math.floor(Math.random() * 25),
+                size: (boosted ? 11 : 7) + Math.random() * 6, life: 20 + Math.floor(Math.random() * 25),
                 color: LAVA_DROP_COLORS[Math.floor(Math.random() * LAVA_DROP_COLORS.length)],
               });
             }
@@ -1193,9 +1577,9 @@
               if (o === jet || o.dead) continue;
               const dx = (o.x + o.w / 2) - fx, dy = (o.y + o.h / 2) - fy;
               const dist = Math.hypot(dx, dy) || 0.001;
-              if (dist < 170 && (dx * Math.cos(jet.aim) + dy * Math.sin(jet.aim)) / dist > 0.5) {
+              if (dist < range && (dx * Math.cos(jet.aim) + dy * Math.sin(jet.aim)) / dist > 0.5) {
                 ignite(o);
-                const force = 5 * (1 - dist / 170) / (o.mass || 1); // the blast shoves things away
+                const force = 5 * (1 - dist / range) / (o.mass || 1) * pushMul; // boost = way stronger shove
                 o.vx += Math.cos(jet.aim) * force; o.vy += Math.sin(jet.aim) * force;
               }
             }
@@ -1290,6 +1674,10 @@
       flames = flames.filter(f => f.life > 0);
 
       updateScream(maxSpeed); // SCREAM when things are flying fast!
+      updateJetDrone(jetPlaneActive); // flying planes hum like jet engines
+      updateGoatScream(goatCharging); // a goat screams while it charges
+      updateHeliSound(heliActive); // choppers whop-whop
+      updateFuelAlarm(fuelBurning); // woop-woop while burning fuel
     }
 
     function draw() {
@@ -1348,11 +1736,24 @@
           ctx.fillStyle = "#6b7280"; ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);        // engine body
           ctx.fillStyle = "#3a4048"; ctx.fillRect(-b.w / 2, -b.h / 2, b.w * 0.25, b.h);  // intake at the back
           ctx.fillStyle = "#ff8a00"; ctx.beginPath(); ctx.arc(b.w * 0.42, 0, b.h * 0.35, 0, Math.PI * 2); ctx.fill(); // exhaust glow at the front
+        } else if (b.kind === "tire") {
+          ctx.fillStyle = "#1c1c1c"; ctx.beginPath(); ctx.arc(0, 0, b.w / 2, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#777"; ctx.beginPath(); ctx.arc(0, 0, b.w / 4, 0, Math.PI * 2); ctx.fill();
+        } else if (b.kind === "propeller") {
+          ctx.fillStyle = "#999"; ctx.fillRect(-b.w / 2, -3, b.w, 6); ctx.fillRect(-3, -b.w / 2, 6, b.w);
         } else {
           ctx.fillStyle = b.color;
           ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
         }
         ctx.restore();
+      }
+
+      // fuel bars above flying aircraft (shown while fuel is 1+, gone at 0)
+      for (const b of blocks) {
+        if ((b.kind === "flyingplane" || b.kind === "flyinghelicopter") && (b.fuel || 0) > 0) {
+          ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(b.x, b.y - 10, b.w, 5);
+          ctx.fillStyle = "#2ed573"; ctx.fillRect(b.x, b.y - 10, b.w * Math.min(1, b.fuel / 300), 5);
+        }
       }
 
       // draw the fire triangles (always pointing up)
@@ -1382,9 +1783,14 @@
       else if (mode === "needle") drawNeedle();
       else if (mode === "bucket") drawBucket();
       if (radialOpen) drawRadial();
+      if (paused) {
+        ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = "#fff"; ctx.font = "bold 46px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("⏸ PAUSED", W / 2, H / 2);
+      }
     }
 
-    function loop() { update(); draw(); updateQuests(); requestAnimationFrame(loop); }
+    function loop() { if (!paused) { update(); updateQuests(); } draw(); requestAnimationFrame(loop); }
     newLevel();
     loop();
   </script>
