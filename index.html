@@ -50,6 +50,23 @@
     #soundpanel { position: fixed; top: 92px; right: 12px; display: none; flex-direction: column; gap: 10px; background: rgba(20,28,38,0.96); padding: 14px; border-radius: 12px; z-index: 8; color: #fff; font-family: Arial, sans-serif; font-size: 14px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
     #soundpanel .srow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     #soundpanel input[type=range] { width: 120px; }
+    #musicpanel, #modelpanel { position: fixed; top: 92px; right: 12px; display: none; flex-direction: column; gap: 8px; background: rgba(20,28,38,0.96); padding: 14px; border-radius: 12px; z-index: 8; color: #fff; font-family: Arial, sans-serif; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); max-height: 82vh; overflow: auto; }
+    #musicpanel .mrow { display: flex; align-items: center; gap: 5px; }
+    #musicpanel .mrow > span { width: 30px; }
+    #musicpanel .cell { width: 16px; height: 22px; border-radius: 3px; background: #33404f; cursor: pointer; }
+    #musicpanel .cell.on { background: #2ed573; }
+    #musicpanel .cell.play { outline: 2px solid #ffd32a; }
+    #modelpanel .srow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    #modelpanel input[type=range] { width: 130px; }
+    #phoneToggle { position: fixed; bottom: 20px; left: 16px; z-index: 9; }
+    #modelpanel .mgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    #modelpanel .mgrid button { font-size: 18px; padding: 4px 0; background: #33404f; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+    #modelpanel .mgrid button.sel { background: #2ed573; }
+    #modelpanel .palette { display: flex; flex-wrap: wrap; gap: 3px; margin: 2px 0; }
+    #modelpanel .palette .sw { width: 18px; height: 18px; border-radius: 3px; cursor: pointer; border: 2px solid transparent; }
+    #modelpanel .palette .sw.sel { border-color: #fff; }
+    #modelpanel .sgrid { display: grid; gap: 0; touch-action: none; width: max-content; }
+    #modelpanel .sgrid .px { width: 14px; height: 14px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.06); background: #1a2430; cursor: pointer; }
     @media (max-width: 820px) {
       #title { font-size: 22px; }
       #hint { font-size: 13px; bottom: 10px; }
@@ -87,12 +104,34 @@
     <button id="landBtn" class="btn">🛬 LAND</button>
     <button id="pauseBtn" class="btn">⏸️ PAUSE</button>
     <button id="soundBtn" class="btn">🔊 SOUND</button>
+    <button id="musicEditBtn" class="btn">🎼 BEATS</button>
+    <button id="modelBtn" class="btn">🧩 MODEL</button>
   </div>
   <div id="soundpanel">
     <div class="srow"><span>🔊 Master</span><input id="masterSlider" type="range" min="0" max="100" value="100"></div>
     <div class="srow"><span>😱 Scream</span><input id="screamSlider" type="range" min="0" max="100" value="100"></div>
+    <div class="srow"><span>🎵 Music</span><input id="musicSlider" type="range" min="0" max="100" value="60"></div>
+    <div class="srow"><span>💥 Boom</span><input id="volBoomS" type="range" min="0" max="100" value="100"></div>
+    <div class="srow"><span>🧱 Hits</span><input id="volPopS" type="range" min="0" max="100" value="100"></div>
+    <div class="srow"><span>🐐 Goat</span><input id="volGoatS" type="range" min="0" max="100" value="100"></div>
+    <div class="srow"><span>🐦 Bird</span><input id="volBirdS" type="range" min="0" max="100" value="100"></div>
+    <div class="srow"><span>✈️ Machines</span><input id="volMachS" type="range" min="0" max="100" value="100"></div>
     <button id="muteBtn" class="btn">🔇 MUTE</button>
   </div>
+  <div id="musicpanel"></div>
+  <div id="modelpanel">
+    <div id="modelGrid" class="mgrid"></div>
+    <div class="srow"><span>📏 Size</span><input id="mdSize" type="range" min="30" max="250" value="100"></div>
+    <div style="opacity:.65;font-size:11px;margin-top:4px">🎨 Draw its sprite (paint the grid)</div>
+    <div id="spritePalette" class="palette"></div>
+    <div id="spriteGrid" class="sgrid"></div>
+    <button id="spriteClear" class="btn">🗑️ Clear sprite</button>
+    <div style="opacity:.65;font-size:11px;margin-top:4px">🟩 Dave extras</div>
+    <div class="srow"><span>🏃 Speed</span><input id="mdSpeed" type="range" min="1" max="60" value="18"></div>
+    <div class="srow"><span>🥚 Egg&nbsp;sec</span><input id="mdEgg" type="range" min="1" max="10" value="3"></div>
+    <div class="srow"><span>🎨 Rare&nbsp;%</span><input id="mdRare" type="range" min="0" max="100" value="10"></div>
+  </div>
+  <button id="phoneToggle" class="btn">📱 PHONE</button>
   <div id="rotctl">
     <button id="rotL" class="rbtn">↺</button>
     <button id="rotR" class="rbtn">↻</button>
@@ -168,6 +207,13 @@
     let mode = "boom";   // "boom" = click explodes, "grab" = drag a block, "spawn" = drop an object
     let held = null;     // the block you're currently holding
     let spawnKind = "goat"; // which object the spawn tool drops
+    // ===== DAVE knobs + per-asset sizes (tweak live in the MODEL editor) =====
+    let DAVE_SPEED = 1.8, DAVE_EGG = 3, DAVE_RARE = 0.1;
+    let sizeMult = {}, mdKind = "dave"; // size multiplier per asset kind
+    const MODEL_ASSETS = [["block","⬜"],["dave","🟩"],["goat","🐐"],["anvil","⚓"],["plane","✈️"],["helicopter","🚁"],["bird","🐦"],["combo","🔗"],["soul","👻"],["sponge","🧽"],["entity","⬛"],["gravgun","🔫"],["jet","🛩️"],["cola","🥤"]];
+    let customSprites = {}, spriteCells = [], paintColor = "#2ed573"; // hand-drawn pixel sprites per asset
+    const SPRITE_COLS = 14, SPRITE_ROWS = 14;
+    const SPRITE_PALETTE = ["#2ed573","#ff4757","#ffd32a","#1e90ff","#ff8a00","#a55eea","#ffffff","#000000","#8b5a2b","#95a5a6", null];
     let pointerDown = false; // is the LEFT mouse button held down right now?
     let rightDown = false;   // is the RIGHT mouse button held down right now?
     const tankColors = {};    // colors stored in the tank, like { "#ff4757": 3 }
@@ -185,7 +231,8 @@
 
     // ===== SOUND — built out of pure math, no files needed =====
     let audioCtx;
-    let masterGain = null, masterVolume = 1, screamVol = 1; // sound settings
+    let masterGain = null, masterVolume = 1, screamVol = 1, musicVol = 0.6; // sound settings
+    let volBoom = 1, volPop = 1, volGoat = 1, volBird = 1, volMachine = 1; // per-sound volumes (SOUND menu)
     function getAudio() {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -210,7 +257,7 @@
       filter.frequency.setValueAtTime(900, now);
       filter.frequency.exponentialRampToValueAtTime(60, now + dur); // sweep down = that deep WHOOMP
       const gain = ac.createGain();
-      gain.gain.setValueAtTime(BOOM_VOLUME, now);
+      gain.gain.setValueAtTime(BOOM_VOLUME * volBoom, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
       noise.connect(filter); filter.connect(gain); gain.connect(masterGain);
       noise.start(now); noise.stop(now + dur);
@@ -223,7 +270,7 @@
       osc.frequency.setValueAtTime(1100, now);
       osc.frequency.exponentialRampToValueAtTime(250, now + 0.08); // quick chirp = the glue cracking
       const gain = ac.createGain();
-      gain.gain.setValueAtTime(BOOM_VOLUME * 0.25, now);
+      gain.gain.setValueAtTime(BOOM_VOLUME * 0.25 * volPop, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
       osc.connect(gain); gain.connect(masterGain);
       osc.start(now); osc.stop(now + 0.08);
@@ -238,7 +285,7 @@
       osc.frequency.setValueAtTime(freq, now);
       osc.frequency.exponentialRampToValueAtTime(freq * 0.5, now + 0.06);
       const gain = ac.createGain();
-      const vol = Math.min(1, strength / 12) * POP_VOLUME * 0.4; // harder hit = louder pop
+      const vol = Math.min(1, strength / 12) * POP_VOLUME * 0.4 * volPop; // harder hit = louder pop
       gain.gain.setValueAtTime(vol, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
       osc.connect(gain); gain.connect(masterGain);
@@ -288,8 +335,8 @@
       lfo.connect(lfoGain); lfoGain.connect(o.frequency); // vibrato = the bleaty wobble
       const g = ac.createGain();
       g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.12 * BOOM_VOLUME, now + 0.03);
-      g.gain.setValueAtTime(0.12 * BOOM_VOLUME, now + Math.max(0.05, dur - 0.08)); // hold the note
+      g.gain.exponentialRampToValueAtTime(0.12 * BOOM_VOLUME * volGoat, now + 0.03);
+      g.gain.setValueAtTime(0.12 * BOOM_VOLUME * volGoat, now + Math.max(0.05, dur - 0.08)); // hold the note
       g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
       o.connect(g); g.connect(masterGain);
       o.start(now); o.stop(now + dur + 0.02); lfo.start(now); lfo.stop(now + dur + 0.02);
@@ -302,7 +349,7 @@
       o.frequency.exponentialRampToValueAtTime(2400, now + 0.12);
       const g = ac.createGain();
       g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.1 * BOOM_VOLUME, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.1 * BOOM_VOLUME * volBird, now + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
       o.connect(g); g.connect(masterGain);
       o.start(now); o.stop(now + 0.14);
@@ -319,7 +366,7 @@
         o1.start(); o2.start();
         jetNodes = { g };
       }
-      jetNodes.g.gain.setTargetAtTime(active ? 0.05 * BOOM_VOLUME : 0, audioCtx.currentTime, 0.1);
+      jetNodes.g.gain.setTargetAtTime(active ? 0.05 * BOOM_VOLUME * volMachine : 0, audioCtx.currentTime, 0.1);
     }
     let goatScreamNodes = null;
     function updateGoatScream(active) { // a medium-pitched scream while a goat is charging
@@ -333,7 +380,7 @@
         o.connect(g); o.start(); lfo.start();
         goatScreamNodes = { g };
       }
-      goatScreamNodes.g.gain.setTargetAtTime(active ? 0.13 * BOOM_VOLUME : 0, audioCtx.currentTime, 0.02);
+      goatScreamNodes.g.gain.setTargetAtTime(active ? 0.13 * BOOM_VOLUME * volGoat : 0, audioCtx.currentTime, 0.02);
     }
     let heliNodes = null;
     function updateHeliSound(active) { // a "whop whop whop" chopper sound while helicopters exist
@@ -349,8 +396,8 @@
         o.start(); chop.start();
         heliNodes = { g, chopGain };
       }
-      heliNodes.g.gain.setTargetAtTime(active ? 0.06 * BOOM_VOLUME : 0, audioCtx.currentTime, 0.05);
-      heliNodes.chopGain.gain.setTargetAtTime(active ? 0.05 * BOOM_VOLUME : 0, audioCtx.currentTime, 0.05);
+      heliNodes.g.gain.setTargetAtTime(active ? 0.06 * BOOM_VOLUME * volMachine : 0, audioCtx.currentTime, 0.05);
+      heliNodes.chopGain.gain.setTargetAtTime(active ? 0.05 * BOOM_VOLUME * volMachine : 0, audioCtx.currentTime, 0.05);
     }
     let alarmNodes = null;
     function updateFuelAlarm(active) { // "woop woop" terrain-alarm while an aircraft burns fuel
@@ -482,6 +529,7 @@
       if (kind === "entity") { w = 40; h = 40; mass = 2; } // black square that grows writhing limbs when touched
       if (kind === "gravgun") { w = 54; h = 26; mass = 2; } // HL2-style gravity gun you carry and fire
       if (kind === "jet") { w = 56; h = 28; mass = 2; } // jet engine: sucks blocks in and burns them into fire
+      const sm = sizeMult[kind] || 1; w *= sm; h *= sm; // MODEL editor per-asset size
       const obj = {
         x: x - w / 2, y: y - h / 2, w, h,
         vx: 0, vy: 0, angle: 0, spin: 0,
@@ -496,9 +544,9 @@
       if (kind === "dave") {
         obj.dir = Math.random() < 0.5 ? -1 : 1;
         const rareDaves = ["#ff4757", "#ffd32a", "#1e90ff", "#95a5a6"]; // red, yellow, blue, grey
-        obj.color = Math.random() < 0.1 ? rareDaves[Math.floor(Math.random() * rareDaves.length)] : "#2ed573";
-        obj.egg = true;                                   // Dave starts as an egg...
-        obj.eggT = 60 + Math.floor(Math.random() * 240);  // ...that hatches in 1-5 seconds
+        obj.color = Math.random() < DAVE_RARE ? rareDaves[Math.floor(Math.random() * rareDaves.length)] : "#2ed573";
+        obj.egg = true;                               // Dave starts as an egg...
+        obj.eggT = Math.max(6, Math.floor(DAVE_EGG * 60)); // ...that hatches after DAVE_EGG seconds
       }
       if (kind === "helicopter") obj.vx = 6;
       if (kind === "flyingplane") { obj.vx = 8; obj.fuel = 0; obj.flying = false; }       // parks until you press TAKEOFF
@@ -922,7 +970,7 @@
     cannibalBtn.addEventListener("click", toggleCannibal);
     function doTakeoff() { for (const b of blocks) if ((b.kind === "flyingplane" || b.kind === "flyinghelicopter") && (b.fuel || 0) > 0) { b.flying = true; b.landing = false; if (b.kind === "flyinghelicopter") b.takingoff = 90; } }
     function doLand() { for (const b of blocks) if (b.kind === "flyingplane" || b.kind === "flyinghelicopter") b.landing = true; }
-    function togglePause() { paused = !paused; pauseBtn.classList.toggle("active", paused); }
+    function togglePause() { paused = !paused; pauseBtn.classList.toggle("active", paused); if (masterGain) masterGain.gain.value = paused ? 0 : masterVolume; } // pause mutes everything
     takeoffBtn.addEventListener("click", doTakeoff);
     landBtn.addEventListener("click", doLand);
     pauseBtn.addEventListener("click", togglePause);
@@ -932,10 +980,28 @@
     const screamSlider = document.getElementById("screamSlider");
     const muteBtn = document.getElementById("muteBtn");
     let prevVol = 1;
-    function applyMaster() { if (masterGain) masterGain.gain.value = masterVolume; }
+    function applyMaster() { if (masterGain) masterGain.gain.value = paused ? 0 : masterVolume; } // stay silent while paused
     soundBtn.addEventListener("click", () => { soundpanel.style.display = (soundpanel.style.display === "flex") ? "none" : "flex"; });
+    // ---- BEATS (music) + MODEL (Dave) editors ----
+    const musicpanel = document.getElementById("musicpanel");
+    const modelpanel = document.getElementById("modelpanel");
+    document.getElementById("musicEditBtn").addEventListener("click", () => { musicpanel.style.display = (musicpanel.style.display === "flex") ? "none" : "flex"; });
+    document.getElementById("modelBtn").addEventListener("click", () => { modelpanel.style.display = (modelpanel.style.display === "flex") ? "none" : "flex"; });
+    document.getElementById("mdSpeed").addEventListener("input", e => { DAVE_SPEED = e.target.value / 10; });
+    document.getElementById("mdSize").addEventListener("input", e => { sizeMult[mdKind] = e.target.value / 100; });
+    document.getElementById("mdEgg").addEventListener("input", e => { DAVE_EGG = +e.target.value; });
+    document.getElementById("mdRare").addEventListener("input", e => { DAVE_RARE = e.target.value / 100; });
+    // ---- phone / computer controls toggle ----
+    document.getElementById("phoneToggle").addEventListener("click", () => { phoneMode = !phoneMode; applyControlMode(); });
     masterSlider.addEventListener("input", () => { masterVolume = masterSlider.value / 100; muteBtn.textContent = masterVolume > 0 ? "🔇 MUTE" : "🔊 UNMUTE"; applyMaster(); });
     screamSlider.addEventListener("input", () => { screamVol = screamSlider.value / 100; });
+    const musicSlider = document.getElementById("musicSlider");
+    musicSlider.addEventListener("input", () => { musicVol = musicSlider.value / 100; });
+    document.getElementById("volBoomS").addEventListener("input", e => { volBoom = e.target.value / 100; });
+    document.getElementById("volPopS").addEventListener("input", e => { volPop = e.target.value / 100; });
+    document.getElementById("volGoatS").addEventListener("input", e => { volGoat = e.target.value / 100; });
+    document.getElementById("volBirdS").addEventListener("input", e => { volBird = e.target.value / 100; });
+    document.getElementById("volMachS").addEventListener("input", e => { volMachine = e.target.value / 100; });
     muteBtn.addEventListener("click", () => {
       if (masterVolume > 0) { prevVol = masterVolume; masterVolume = 0; masterSlider.value = 0; muteBtn.textContent = "🔊 UNMUTE"; muteBtn.classList.add("active"); }
       else { masterVolume = prevVol || 1; masterSlider.value = Math.round(masterVolume * 100); muteBtn.textContent = "🔇 MUTE"; muteBtn.classList.remove("active"); }
@@ -1022,13 +1088,20 @@
     }
     canvas.addEventListener("mousedown", (e) => {
       if (e.button === 2) { mouse.x = e.clientX; mouse.y = e.clientY; rightDown = true; return; }
-      pointerPress(e.clientX, e.clientY);
+      if (phoneMode) phoneDown(e.clientX, e.clientY); else pointerPress(e.clientX, e.clientY);
     });
-    canvas.addEventListener("mousemove", (e) => pointerMove(e.clientX, e.clientY));
-    addEventListener("mouseup", (e) => { if (e.button === 2) { rightDown = false; return; } pointerRelease(); });
+    canvas.addEventListener("mousemove", (e) => {
+      if (radialOpen) { mouse.x = e.clientX; mouse.y = e.clientY; updateRadial(e.clientX, e.clientY); return; } // mouse steers the tool wheel
+      if (phoneMode) { mouse.x = e.clientX; mouse.y = e.clientY; phoneMove(e.clientX, e.clientY); }             // track the cursor for previews
+      else pointerMove(e.clientX, e.clientY);
+    });
+    addEventListener("mouseup", (e) => { if (e.button === 2) { rightDown = false; return; } if (phoneMode) phoneUp(e.clientX, e.clientY); else pointerRelease(); });
     canvas.addEventListener("contextmenu", (e) => e.preventDefault()); // let right-click be a game control
     addEventListener("keydown", (e) => {
       if (e.key === "r" || e.key === "R") { buildTower(); return; }
+      if (e.key === "," || e.key === "<") { rotateControl(-1); return; }   // keyboard: rotate left
+      if (e.key === "." || e.key === ">") { rotateControl(1); return; }    // keyboard: rotate right
+      if (e.key === "Tab") { e.preventDefault(); if (radialOpen) closeRadial(true); else openRadial(mouse.x, mouse.y); return; } // Tab pops the tool wheel at the cursor
       if (held && held.kind === "gravgun") { // gravity gun controls
         if (e.key === "1") held.beamDist += 25;                              // push the held object forward
         if (e.key === "2") held.beamDist = Math.max(50, held.beamDist - 25); // pull it back
@@ -1163,19 +1236,41 @@
       pointerPress(x, y); pointerRelease();
     }
     let tStart = null, tRadialTimer = null, tActing = false, tTwo = false, tPrev = null;
-    // computer = buttons + mouse (the pre-radial way); phone = radial + swipe
-    const isPhone = window.matchMedia("(pointer: coarse)").matches;
-    if (isPhone) {
-      document.getElementById("controls").style.display = "none";
-      document.getElementById("rotctl").style.display = "flex";
-      document.getElementById("hint").textContent = "Tap to use • hold for tools • ↺↻ to rotate • two fingers = beam";
-    } else {
-      document.getElementById("hint").textContent = "CLICK to use • pick a tool below • scroll to aim/tip • right-click = beam";
+    // ===== CONTROL MODE: computer (buttons + mouse) OR phone (radial + tap/drag) — toggle with the 📱 button =====
+    let phoneMode = window.matchMedia("(pointer: coarse)").matches;
+    function applyControlMode() {
+      document.getElementById("controls").style.display = phoneMode ? "none" : "flex";
+      document.getElementById("rotctl").style.display = phoneMode ? "flex" : "none";
+      document.getElementById("hint").textContent = phoneMode
+        ? "Tap to use • hold for tools • ↺↻ to rotate • two fingers = beam"
+        : "CLICK to use • pick a tool below • scroll to aim/tip • right-click = beam";
+      const tb = document.getElementById("phoneToggle"); if (tb) tb.textContent = phoneMode ? "💻 PC" : "📱 PHONE";
     }
-    if (isPhone) {
+
+    // one-pointer gestures — used by TOUCH always, and by the MOUSE while in phone mode
+    function phoneDown(x, y) {
+      tStart = { x, y }; tActing = false;
+      mouse.x = x; mouse.y = y;
+      tRadialTimer = setTimeout(() => openRadial(x, y), 300); // hold still = tool menu
+    }
+    function phoneMove(x, y) {
+      if (radialOpen) { updateRadial(x, y); return; }
+      if (!tStart) return;
+      const moved = Math.hypot(x - tStart.x, y - tStart.y);
+      if (!tActing && moved > 12) { clearTimeout(tRadialTimer); tActing = true; pointerPress(tStart.x, tStart.y); } // drag = use the tool
+      if (tActing) pointerMove(x, y);
+      else { mouse.x = x; mouse.y = y; }
+    }
+    function phoneUp(x, y) {
+      clearTimeout(tRadialTimer);
+      if (radialOpen) { closeRadial(true); tStart = null; return; }   // release on a wedge = pick it
+      if (tActing) { pointerRelease(); tActing = false; tStart = null; return; }
+      if (tStart) { touchTap(x, y); tStart = null; }                  // quick tap = use the tool once
+    }
+
     canvas.addEventListener("touchstart", (e) => {
       e.preventDefault();
-      if (e.touches.length >= 2) { // two fingers = right-click beam + swipe aim
+      if (e.touches.length >= 2) { // two fingers = beam + swipe aim
         clearTimeout(tRadialTimer);
         if (radialOpen) closeRadial(false);
         if (tActing) { pointerRelease(); tActing = false; }
@@ -1186,9 +1281,7 @@
         return;
       }
       const t = e.touches[0];
-      tStart = { x: t.clientX, y: t.clientY }; tActing = false;
-      mouse.x = t.clientX; mouse.y = t.clientY;
-      tRadialTimer = setTimeout(() => openRadial(tStart.x, tStart.y), 300); // hold still = tool menu
+      phoneDown(t.clientX, t.clientY);
     }, { passive: false });
     canvas.addEventListener("touchmove", (e) => {
       e.preventDefault();
@@ -1204,28 +1297,205 @@
         tPrev = { x: cx, y: cy };
         return;
       }
-      if (radialOpen) { const t = e.touches[0]; updateRadial(t.clientX, t.clientY); return; }
-      if (!tStart) return;
       const t = e.touches[0];
-      const moved = Math.hypot(t.clientX - tStart.x, t.clientY - tStart.y);
-      if (!tActing && moved > 12) { clearTimeout(tRadialTimer); tActing = true; pointerPress(tStart.x, tStart.y); } // drag = use the tool
-      if (tActing) pointerMove(t.clientX, t.clientY);
-      else { mouse.x = t.clientX; mouse.y = t.clientY; }
+      phoneMove(t.clientX, t.clientY);
     }, { passive: false });
     addEventListener("touchend", (e) => {
       if (tTwo) { if (e.touches.length < 2) { tTwo = false; rightDown = false; tPrev = null; } return; }
-      clearTimeout(tRadialTimer);
-      if (radialOpen) { closeRadial(true); tStart = null; return; }   // release on a wedge = pick it
-      if (tActing) { pointerRelease(); tActing = false; tStart = null; return; }
-      if (tStart) { touchTap(tStart.x, tStart.y); tStart = null; }     // quick tap = use the tool once
+      phoneUp(mouse.x, mouse.y);
     });
-    } // end phone-only touch controls
+    applyControlMode(); // set the starting control scheme (phone on touch devices, computer otherwise)
+
+    // ---- drum kit: kick, snare, hi-hat (pure math, no files) ----
+    function playKick() {
+      if (!audioCtx) return;
+      const ac = getAudio(), now = ac.currentTime;
+      const g = ac.createGain(); g.gain.setValueAtTime(0.0001, now); g.connect(masterGain);
+      const o = ac.createOscillator(); o.type = "sine";
+      o.frequency.setValueAtTime(150, now); o.frequency.exponentialRampToValueAtTime(50, now + 0.12); // pitch drop = thump
+      g.gain.exponentialRampToValueAtTime(0.16 * BOOM_VOLUME * musicVol, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+      o.connect(g); o.start(now); o.stop(now + 0.18);
+    }
+    function noiseBurst(dur, hp, peak) { // a filtered white-noise hit (used for snare & hat)
+      if (!audioCtx) return;
+      const ac = getAudio(), now = ac.currentTime;
+      const src = ac.createBufferSource();
+      const buf = ac.createBuffer(1, Math.max(1, Math.floor(ac.sampleRate * dur)), ac.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      src.buffer = buf;
+      const f = ac.createBiquadFilter(); f.type = "highpass"; f.frequency.value = hp;
+      const g = ac.createGain(); g.gain.setValueAtTime(Math.max(peak, 0.0002), now); g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      src.connect(f); f.connect(g); g.connect(masterGain);
+      src.start(now); src.stop(now + dur);
+    }
+    function playSnare() { noiseBurst(0.16, 900, 0.12 * BOOM_VOLUME * volGoat * musicVol); }
+    function playHat()   { noiseBurst(0.035, 8000, 0.05 * BOOM_VOLUME * musicVol); }
+
+    // ---- background GAME music: chiptune loop (goes BREAKCORE when an entity is loose) ----
+    const MUSIC_NOTES = [523, 659, 784, 659, 587, 698, 880, 698, 523, 659, 784, 1047, 988, 784, 659, 587]; // calm
+    const BREAK_NOTES = [523, 622, 523, 466, 587, 523, 466, 415, 622, 698, 622, 466, 784, 622, 466, 349]; // dark & driving
+    let musicNodes = null, beatTick = 0, beatStep = 0, melodyStep = 0;
+    // editable 16-step drum patterns + tempo, driven by the BEATS editor
+    let normalStepFrames = 8, musicCells = null;
+    let kickPat  = [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0];
+    let snarePat = [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0];
+    let hatPat   = [1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0];
+    function drumHit(step, breakcore) {
+      if (breakcore) { // frantic amen-style chaos (kept wild on purpose)
+        playHat();
+        if (step % 2 === 0 || Math.random() < 0.55) playKick();
+        if (step % 4 === 2 || Math.random() < 0.45) playSnare();
+      } else {         // YOUR groove from the BEATS editor
+        if (kickPat[step]) playKick();
+        if (snarePat[step]) playSnare();
+        if (hatPat[step]) playHat();
+      }
+    }
+    function highlightStep(step) { // light up the playing column in the editor
+      if (!musicCells) return;
+      for (const row of musicCells) for (let i = 0; i < row.length; i++) row[i].classList.toggle("play", i === step);
+    }
+    function buildMusicEditor() {
+      const panel = document.getElementById("musicpanel");
+      const trow = document.createElement("div"); trow.className = "mrow";
+      const tl = document.createElement("span"); tl.textContent = "⏱️"; trow.appendChild(tl);
+      const tempo = document.createElement("input"); tempo.type = "range"; tempo.min = 2; tempo.max = 18; tempo.value = normalStepFrames; tempo.style.width = "240px";
+      tempo.addEventListener("input", () => { normalStepFrames = +tempo.value; }); // left = faster
+      trow.appendChild(tempo); panel.appendChild(trow);
+      const rows = [["🥁", kickPat], ["👏", snarePat], ["🎩", hatPat]];
+      musicCells = [];
+      for (const [label, pat] of rows) {
+        const row = document.createElement("div"); row.className = "mrow";
+        const sp = document.createElement("span"); sp.textContent = label; row.appendChild(sp);
+        const cells = [];
+        for (let i = 0; i < 16; i++) {
+          const c = document.createElement("div"); c.className = "cell" + (pat[i] ? " on" : "");
+          c.addEventListener("click", () => { pat[i] = pat[i] ? 0 : 1; c.classList.toggle("on", !!pat[i]); });
+          row.appendChild(c); cells.push(c);
+        }
+        musicCells.push(cells); panel.appendChild(row);
+      }
+    }
+    function loadSpriteInto(kind) { // show the selected asset's sprite in the grid
+      const spr = customSprites[kind];
+      for (let r = 0; r < SPRITE_ROWS; r++) for (let c = 0; c < SPRITE_COLS; c++) {
+        const col = spr ? spr.grid[r][c] : null;
+        spriteCells[r][c].style.background = col || "#1a2430";
+      }
+    }
+    function paintCell(r, c) {
+      if (!customSprites[mdKind]) {
+        const g = [];
+        for (let i = 0; i < SPRITE_ROWS; i++) g.push(new Array(SPRITE_COLS).fill(null));
+        customSprites[mdKind] = { cols: SPRITE_COLS, rows: SPRITE_ROWS, grid: g };
+      }
+      customSprites[mdKind].grid[r][c] = paintColor; // paintColor null = erase back to see-through
+      spriteCells[r][c].style.background = paintColor || "#1a2430";
+    }
+    function buildModelEditor() {
+      const grid = document.getElementById("modelGrid");
+      const sizeS = document.getElementById("mdSize");
+      const btns = {};
+      function selectAsset(kind) {
+        mdKind = kind;
+        for (const k in btns) btns[k].classList.toggle("sel", k === kind);
+        sizeS.value = Math.round((sizeMult[kind] || 1) * 100);
+        loadSpriteInto(kind);
+      }
+      for (const [kind, emoji] of MODEL_ASSETS) {
+        const b = document.createElement("button"); b.textContent = emoji; b.title = kind;
+        b.addEventListener("click", () => selectAsset(kind));
+        grid.appendChild(b); btns[kind] = b;
+      }
+      // color palette
+      const pal = document.getElementById("spritePalette");
+      const swatches = [];
+      SPRITE_PALETTE.forEach((col) => {
+        const sw = document.createElement("div"); sw.className = "sw";
+        sw.style.background = col || "repeating-conic-gradient(#888 0% 25%, #ccc 0% 50%) 50% / 8px 8px"; // eraser = checker
+        if (col === paintColor) sw.classList.add("sel");
+        sw.addEventListener("click", () => { paintColor = col; swatches.forEach(s => s.classList.remove("sel")); sw.classList.add("sel"); });
+        pal.appendChild(sw); swatches.push(sw);
+      });
+      // pixel grid (drag to paint; works with mouse or finger)
+      const sg = document.getElementById("spriteGrid");
+      sg.style.gridTemplateColumns = "repeat(" + SPRITE_COLS + ", 14px)";
+      let painting = false;
+      addEventListener("pointerup", () => { painting = false; });
+      sg.addEventListener("pointermove", (e) => {
+        if (!painting) return;
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        if (el && el.classList.contains("px")) paintCell(+el.dataset.r, +el.dataset.c);
+      });
+      for (let r = 0; r < SPRITE_ROWS; r++) {
+        const row = [];
+        for (let c = 0; c < SPRITE_COLS; c++) {
+          const px = document.createElement("div"); px.className = "px"; px.dataset.r = r; px.dataset.c = c;
+          px.addEventListener("pointerdown", (e) => { e.preventDefault(); painting = true; paintCell(r, c); });
+          sg.appendChild(px); row.push(px);
+        }
+        spriteCells.push(row);
+      }
+      document.getElementById("spriteClear").addEventListener("click", () => { customSprites[mdKind] = null; loadSpriteInto(mdKind); });
+      selectAsset(mdKind);
+    }
+    buildMusicEditor(); // build the BEATS grid now that its patterns exist
+    buildModelEditor(); // build the MODEL asset grid
+    function updateGameMusic(breakcore) {
+      if (!audioCtx) return; // no sound until the player has clicked once
+      if (!(musicVol > 0)) { if (musicNodes) musicNodes.g.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1); return; }
+      const ac = getAudio();
+      if (!musicNodes) {
+        const g = ac.createGain(); g.gain.value = 0; g.connect(masterGain);
+        const o = ac.createOscillator(); o.type = "square"; o.frequency.value = MUSIC_NOTES[0]; o.connect(g); o.start();
+        musicNodes = { g, o };
+      }
+      const notes = breakcore ? BREAK_NOTES : MUSIC_NOTES;
+      musicNodes.o.type = breakcore ? "sawtooth" : "square";  // harsher tone for breakcore
+      musicNodes.g.gain.setTargetAtTime((breakcore ? 0.06 : 0.05) * BOOM_VOLUME * musicVol, ac.currentTime, 0.08);
+      const stepFrames = breakcore ? 3 : normalStepFrames;     // breakcore = super fast
+      if (++beatTick >= stepFrames) {
+        beatTick = 0;
+        beatStep = (beatStep + 1) % 16;
+        highlightStep(beatStep);
+        drumHit(beatStep, breakcore);
+        if (breakcore || beatStep % 2 === 0) {                 // melody: every step in breakcore, every other otherwise
+          melodyStep = (melodyStep + 1) % notes.length;
+          musicNodes.o.frequency.setValueAtTime(notes[melodyStep], ac.currentTime);
+        }
+      }
+    }
 
     function update() {
       const floor = H - 20;
-      let maxSpeed = 0, jetPlaneActive = false, goatCharging = false, heliActive = false, fuelBurning = false;
+      let maxSpeed = 0, jetPlaneActive = false, goatCharging = false, heliActive = false, fuelBurning = false, goatRiding = false;
       for (const b of blocks) {
         if (b.captured) continue; // being eaten — the entity controls its position, skip normal physics
+        // a goat that touches a plane shrinks tiny and climbs into the cockpit
+        if ((b.kind === "goat" || b.kind === "soulgoat") && !b.riding) {
+          for (const o of blocks) {
+            if ((o.kind === "plane" || o.kind === "flyingplane") && !o.dead &&
+                b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y) {
+              b.origW = b.origW || b.w; b.origH = b.origH || b.h; b.riding = o; playBleat();
+              break;
+            }
+          }
+        }
+        if (b.riding) { // riding in the cockpit
+          const p = b.riding;
+          if (!p || p.dead) { b.riding = null; if (b.origW) { b.w = b.origW; b.h = b.origH; } } // plane gone -> drop out full-size
+          else {
+            b.w = b.origW * 0.35; b.h = b.origH * 0.35;      // tiny goat
+            const dir = (p.vx >= 0 ? 1 : -1);
+            b.x = p.x + p.w / 2 - b.w / 2 + dir * p.w * 0.16; // sit in the cockpit, toward the front
+            b.y = p.y + p.h * 0.30 - b.h / 2;
+            b.vx = 0; b.vy = 0; b.angle = p.angle || 0; b.spin = 0;
+            goatRiding = true;
+            continue; // glued to the plane — skip gravity/AI this frame
+          }
+        }
         b.vy += GRAVITY;
         if (b.kind === "bird") { // birds fly: shrug off gravity, flap, and wander around
           b.vy -= GRAVITY + 0.06;
@@ -1377,7 +1647,7 @@
             b.egg = false;
             spawnHatch(b);
             const cx = b.x + b.w / 2, bottom = b.y + b.h;
-            b.baseW = 68; b.baseH = 28; b.scale = 0.5; b.eaten = 0; // hatch at half size; eat 4 squares to reach full
+            b.baseW = 68 * (sizeMult["dave"] || 1); b.baseH = 28 * (sizeMult["dave"] || 1); b.scale = 0.5; b.eaten = 0; // hatch at half size; eat 4 squares to reach full
             b.w = b.baseW * b.scale; b.h = b.baseH * b.scale;
             b.x = cx - b.w / 2; b.y = bottom - b.h;
           }
@@ -1390,6 +1660,7 @@
           let fell = false;
           for (const o of blocks) {             // bumped into something?
             if (o === b) continue;
+            if (o.kind === "dave") continue;    // noclip: Daves pass right through each other
             if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
             if (b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y) {
               if ((b.scale || 1) < 1 && o.kind === "block" && !o.dead) { // small Dave EATS squares instantly and grows
@@ -1419,7 +1690,7 @@
           if (onGround) b.floating = false;
           if (b.floating && Math.abs(b.vy) < 2.5) b.vy = 0;              // hover; never from spawning in air or standing on another Dave
           b.wasGrounded = onGround;
-          b.vx = b.dir * 1.8;
+          b.vx = b.dir * DAVE_SPEED;
           b.spin = 0; b.angle = 0; // stays upright
         }
         b.x += b.vx;
@@ -1546,6 +1817,10 @@
         for (let j = i + 1; j < blocks.length; j++) {
           const a = blocks[i], b = blocks[j];
           if (a.captured || b.captured) continue; // stuff being eaten doesn't collide
+          // Daves noclip through each other; a goat & a plane pass through (the goat rides in the cockpit)
+          const aG = a.kind === "goat" || a.kind === "soulgoat", bG = b.kind === "goat" || b.kind === "soulgoat";
+          const aP = a.kind === "plane" || a.kind === "flyingplane", bP = b.kind === "plane" || b.kind === "flyingplane";
+          if ((a.kind === "dave" && b.kind === "dave") || a.riding || b.riding || (aG && bP) || (bG && aP)) continue;
           const dx = (b.x + b.w / 2) - (a.x + a.w / 2);
           const dy = (b.y + b.h / 2) - (a.y + a.h / 2);
           const dist = Math.hypot(dx, dy);
@@ -1799,9 +2074,19 @@
       updateJetDrone(jetPlaneActive); // flying planes hum like jet engines
       updateGoatScream(goatCharging); // a goat screams while it charges
       updateHeliSound(heliActive); // choppers whop-whop
+      updateGameMusic(blocks.some(b => b.kind === "entity")); // breakcore when an entity is loose
       updateFuelAlarm(fuelBurning); // woop-woop while burning fuel
     }
 
+    function drawSprite(spr, w, h) { // draw a hand-made pixel sprite centered at the current transform
+      const pw = w / spr.cols, ph = h / spr.rows;
+      for (let r = 0; r < spr.rows; r++) for (let c = 0; c < spr.cols; c++) {
+        const col = spr.grid[r][c];
+        if (!col) continue; // see-through pixel
+        ctx.fillStyle = col;
+        ctx.fillRect(-w / 2 + c * pw, -h / 2 + r * ph, pw + 0.6, ph + 0.6);
+      }
+    }
     function draw() {
       ctx.clearRect(0, 0, W, H);
       ctx.save();
@@ -1830,7 +2115,9 @@
         ctx.save();
         ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
         ctx.rotate(b.angle);
-        if (b.emoji) {
+        if (customSprites[b.kind]) {
+          drawSprite(customSprites[b.kind], b.w, b.h); // your hand-drawn sprite wins
+        } else if (b.emoji) {
           ctx.font = b.w + "px serif";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
