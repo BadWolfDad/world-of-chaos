@@ -1186,6 +1186,8 @@
       { icon: "🛬", act: () => doLand() },
       { icon: "⏸️", act: () => togglePause() },
       { icon: "🔊", act: () => { soundpanel.style.display = (soundpanel.style.display === "flex") ? "none" : "flex"; } },
+      { icon: "🎼", act: () => { musicpanel.style.display = (musicpanel.style.display === "flex") ? "none" : "flex"; } },
+      { icon: "🧩", act: () => { modelpanel.style.display = (modelpanel.style.display === "flex") ? "none" : "flex"; } },
       { icon: "🔄", act: () => buildTower() },
       { icon: "🏆", act: () => resetKeepSurvivors() },
     ];
@@ -1342,6 +1344,9 @@
     let kickPat  = [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0];
     let snarePat = [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0];
     let hatPat   = [1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0];
+    const SCALE = [523, 587, 659, 698, 784, 880, 988, 1047]; // C major, low -> high
+    let melody = [0,2,4,2, 1,3,5,3, 0,2,4,7, 6,4,2,1]; // one pitch (0-7) per step, -1 = rest
+    let melodyCells = null;
     function drumHit(step, breakcore) {
       if (breakcore) { // frantic amen-style chaos (kept wild on purpose)
         playHat();
@@ -1353,9 +1358,11 @@
         if (hatPat[step]) playHat();
       }
     }
-    function highlightStep(step) { // light up the playing column in the editor
-      if (!musicCells) return;
-      for (const row of musicCells) for (let i = 0; i < row.length; i++) row[i].classList.toggle("play", i === step);
+    function highlightStep(step) { // light up the playing column in both grids
+      for (const g of [musicCells, melodyCells]) {
+        if (!g) continue;
+        for (const row of g) for (let i = 0; i < row.length; i++) row[i].classList.toggle("play", i === step);
+      }
     }
     function buildMusicEditor() {
       const panel = document.getElementById("musicpanel");
@@ -1376,6 +1383,24 @@
           row.appendChild(c); cells.push(c);
         }
         musicCells.push(cells); panel.appendChild(row);
+      }
+      // ---- TUNE: a piano-roll (8 pitches x 16 steps), one note per step ----
+      const tl2 = document.createElement("div"); tl2.className = "mrow"; tl2.innerHTML = "<span>🎵</span>"; panel.appendChild(tl2);
+      melodyCells = [];
+      function refreshCol(c) {
+        for (let r = 0; r < melodyCells.length; r++) melodyCells[r][c].classList.toggle("on", melody[c] === (SCALE.length - 1 - r));
+      }
+      for (let r = 0; r < SCALE.length; r++) {
+        const row = document.createElement("div"); row.className = "mrow";
+        row.appendChild(document.createElement("span"));
+        const pitch = SCALE.length - 1 - r; // top row = highest note
+        const cells = [];
+        for (let c = 0; c < 16; c++) {
+          const cell = document.createElement("div"); cell.className = "cell" + (melody[c] === pitch ? " on" : "");
+          cell.addEventListener("click", () => { melody[c] = (melody[c] === pitch) ? -1 : pitch; refreshCol(c); });
+          row.appendChild(cell); cells.push(cell);
+        }
+        melodyCells.push(cells); panel.appendChild(row);
       }
     }
     function loadSpriteInto(kind) { // show the selected asset's sprite in the grid
@@ -1452,18 +1477,26 @@
         const o = ac.createOscillator(); o.type = "square"; o.frequency.value = MUSIC_NOTES[0]; o.connect(g); o.start();
         musicNodes = { g, o };
       }
-      const notes = breakcore ? BREAK_NOTES : MUSIC_NOTES;
       musicNodes.o.type = breakcore ? "sawtooth" : "square";  // harsher tone for breakcore
-      musicNodes.g.gain.setTargetAtTime((breakcore ? 0.06 : 0.05) * BOOM_VOLUME * musicVol, ac.currentTime, 0.08);
+      const vol = (breakcore ? 0.06 : 0.05) * BOOM_VOLUME * musicVol;
       const stepFrames = breakcore ? 3 : normalStepFrames;     // breakcore = super fast
       if (++beatTick >= stepFrames) {
         beatTick = 0;
         beatStep = (beatStep + 1) % 16;
         highlightStep(beatStep);
         drumHit(beatStep, breakcore);
-        if (breakcore || beatStep % 2 === 0) {                 // melody: every step in breakcore, every other otherwise
-          melodyStep = (melodyStep + 1) % notes.length;
-          musicNodes.o.frequency.setValueAtTime(notes[melodyStep], ac.currentTime);
+        if (breakcore) { // breakcore plays its own wild sequence every step
+          melodyStep = (melodyStep + 1) % BREAK_NOTES.length;
+          musicNodes.o.frequency.setValueAtTime(BREAK_NOTES[melodyStep], ac.currentTime);
+          musicNodes.g.gain.setTargetAtTime(vol, ac.currentTime, 0.03);
+        } else {         // YOUR tune from the editor: one note per step, -1 = rest
+          const mi = melody[beatStep];
+          if (mi >= 0) {
+            musicNodes.o.frequency.setValueAtTime(SCALE[mi], ac.currentTime);
+            musicNodes.g.gain.setTargetAtTime(vol, ac.currentTime, 0.02);
+          } else {
+            musicNodes.g.gain.setTargetAtTime(0, ac.currentTime, 0.02); // rest
+          }
         }
       }
     }
