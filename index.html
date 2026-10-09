@@ -96,6 +96,7 @@
     <button id="jetBtn" class="btn">🚀 JET</button>
     <button id="squareBtn" class="btn">🟦 ADD SQUARE</button>
     <button id="bucketBtn" class="btn">🪣 BUCKET</button>
+    <button id="vineBtn" class="btn">🌿 VINE</button>
     <button id="vacBtn" class="btn">🌀 VACUUM</button>
     <button id="needleBtn" class="btn">💉 NEEDLE</button>
     <button id="stickBtn" class="btn">🔗 STICK</button>
@@ -183,6 +184,7 @@
     const squareBtn = document.getElementById("squareBtn");
     const bucketBtn = document.getElementById("bucketBtn");
     const vacBtn = document.getElementById("vacBtn");
+    const vineBtn = document.getElementById("vineBtn");
     const needleBtn = document.getElementById("needleBtn");
     const cannibalBtn = document.getElementById("cannibalBtn");
     const takeoffBtn = document.getElementById("takeoffBtn");
@@ -202,6 +204,8 @@
     let bonds = [];      // the springy glue connections between blocks
     let flames = [];     // little rising fire triangles
     let bits = [];       // tiny squares that burst out when a Dave egg hatches
+    let vines = [];      // carnivorous vines that grab, shrink & drag things under a surface
+    const VINE_REACH = 130, VINE_DETECT = 155, VINE_GROW = 0.07, VINE_EAT_TIME = 75; // reach / sense / grow speed / how SLOWLY it shrinks & grays (bigger = slower)
     let sticky = false;  // are the blocks glued right now?
     let shake = 0;
     let mode = "boom";   // "boom" = click explodes, "grab" = drag a block, "spawn" = drop an object
@@ -420,6 +424,7 @@
       bonds = [];
       flames = [];
       bits = [];
+      vines = [];
       sticky = false;
       held = null;
       stickBtn.textContent = "🔗 STICK";
@@ -931,6 +936,7 @@
       jetBtn.classList.toggle("active", m === "spawn" && spawnKind === "jet");
       squareBtn.classList.toggle("active", m === "spawn" && spawnKind === "block");
       bucketBtn.classList.toggle("active", m === "bucket");
+      vineBtn.classList.toggle("active", m === "vine");
       vacBtn.classList.toggle("active", m === "vacuum");
       needleBtn.classList.toggle("active", m === "needle");
       canvas.style.cursor = (m === "grab") ? "grab" : ((m === "spawn") ? "copy" : ((m === "vacuum" || m === "needle" || m === "bucket") ? "crosshair" : "default"));
@@ -966,6 +972,7 @@
     vacBtn.addEventListener("click", () => setMode("vacuum"));
     needleBtn.addEventListener("click", () => setMode("needle"));
     bucketBtn.addEventListener("click", () => setMode("bucket"));
+    vineBtn.addEventListener("click", () => setMode("vine"));
     function toggleCannibal() { cannibalism = !cannibalism; cannibalBtn.classList.toggle("active", cannibalism); }
     cannibalBtn.addEventListener("click", toggleCannibal);
     function doTakeoff() { for (const b of blocks) if ((b.kind === "flyingplane" || b.kind === "flyinghelicopter") && (b.fuel || 0) > 0) { b.flying = true; b.landing = false; if (b.kind === "flyinghelicopter") b.takingoff = 90; } }
@@ -1027,6 +1034,19 @@
       }
     }
 
+    // plant a vine on whatever surface you clicked nearest (floor, ceiling, or a wall)
+    function plantVine(px, py) {
+      const floor = H - 20;
+      const dB = floor - py, dT = py, dL = px, dR = W - px;
+      const m = Math.min(dB, dT, dL, dR);
+      let vx, vy, dir;
+      if (m === dT) { vx = px; vy = 0; dir = { x: 0, y: 1 }; }        // ceiling
+      else if (m === dL) { vx = 0; vy = py; dir = { x: 1, y: 0 }; }    // left wall
+      else if (m === dR) { vx = W; vy = py; dir = { x: -1, y: 0 }; }   // right wall
+      else { vx = px; vy = floor; dir = { x: 0, y: -1 }; }            // floor (default)
+      vines.push({ x: vx, y: vy, dir: dir, state: "idle", len: 0, grab: null, target: null, sway: Math.random() * 10 });
+    }
+
     // shared pointer logic — used by BOTH mouse and touch
     function pointerPress(x, y) {
       mouse.x = x; mouse.y = y;
@@ -1066,6 +1086,8 @@
           ejectTankSquare();
           updateTankDisplay();
         }
+      } else if (mode === "vine") {
+        plantVine(x, y);
       } else {
         let best = null, bestDist = 50;
         for (const b of blocks) {
@@ -1173,6 +1195,7 @@
       { icon: "🔗", act: () => setMode("spawn", "combo") },
       { icon: "👻", act: () => setMode("spawn", "soul") },
       { icon: "🧽", act: () => setMode("spawn", "sponge") },
+      { icon: "🌿", act: () => setMode("vine") },
       { icon: "⬛", act: () => setMode("spawn", "entity") },
       { icon: "🔫", act: () => setMode("spawn", "gravgun") },
       { icon: "🚀", act: () => setMode("spawn", "jet") },
@@ -1506,6 +1529,26 @@
       let maxSpeed = 0, jetPlaneActive = false, goatCharging = false, heliActive = false, fuelBurning = false, goatRiding = false;
       for (const b of blocks) {
         if (b.captured) continue; // being eaten — the entity controls its position, skip normal physics
+        if (b.vined) { // caught by a vine: gray + shrink to half, rise a little, then drag through the surface
+          const g = b.vined, v = g.vine;
+          g.tt = (g.tt || 0) + 1;
+          if (g.phase === "grab") {
+            const p = Math.min(1, g.tt / VINE_EAT_TIME);
+            g.gray = p;
+            b.w = g.startW * (1 - 0.5 * p); // shrink toward half size
+            b.h = g.startH * (1 - 0.5 * p);
+            const cx = g.cx + (v.x - g.cx) * p, cy = g.cy + (v.y - g.cy) * p; // reel it IN toward the vine
+            b.x = cx - b.w / 2; b.y = cy - b.h / 2;
+            if (p >= 1) g.phase = "drag";
+          } else { // drag INTO the surface and off the screen
+            g.gray = 1;
+            b.x -= v.dir.x * 4.5; b.y -= v.dir.y * 4.5;
+            const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+            if (cx < -60 || cx > W + 60 || cy < -60 || cy > H + 60) { b.dead = true; if (v.grab === b) v.grab = null; }
+          }
+          b.vx = 0; b.vy = 0; b.spin = 0;
+          continue;
+        }
         // a goat that touches a plane shrinks tiny and climbs into the cockpit
         if ((b.kind === "goat" || b.kind === "soulgoat") && !b.riding) {
           for (const o of blocks) {
@@ -1849,7 +1892,7 @@
       for (let i = 0; i < blocks.length; i++) {
         for (let j = i + 1; j < blocks.length; j++) {
           const a = blocks[i], b = blocks[j];
-          if (a.captured || b.captured) continue; // stuff being eaten doesn't collide
+          if (a.captured || b.captured || a.vined || b.vined) continue; // eaten/vined stuff doesn't collide
           // Daves noclip through each other; a goat & a plane pass through (the goat rides in the cockpit)
           const aG = a.kind === "goat" || a.kind === "soulgoat", bG = b.kind === "goat" || b.kind === "soulgoat";
           const aP = a.kind === "plane" || a.kind === "flyingplane", bP = b.kind === "plane" || b.kind === "flyingplane";
@@ -2075,6 +2118,45 @@
         updateTankDisplay();
       }
 
+      // ===== VINES: sense prey, sprout out, grab it, then retract back into the surface =====
+      for (const v of vines) {
+        if (v.state === "idle") {
+          v.len = Math.max(0, v.len - VINE_GROW);
+          let best = null, bd = VINE_DETECT;
+          for (const b of blocks) {
+            if (b.vined || b.captured || b.dead) continue;
+            if (b.kind === "water" || b.kind === "lava" || b.kind === "coladrop") continue;
+            const ox = (b.x + b.w / 2) - v.x, oy = (b.y + b.h / 2) - v.y;
+            if (ox * v.dir.x + oy * v.dir.y < 4) continue; // must be on the OUT side of the surface
+            const d = Math.hypot(ox, oy);
+            if (d < bd) { bd = d; best = b; }
+          }
+          if (best) { v.target = best; v.state = "emerge"; } // prey spotted — sprout!
+        } else if (v.state === "emerge") {
+          v.len = Math.min(1, v.len + VINE_GROW); // grow OUT of the ground
+          const t = v.target;
+          if (!t || t.dead || t.vined || t.captured) { v.target = null; v.state = "retract"; }
+          else {
+            const tx = t.x + t.w / 2, ty = t.y + t.h / 2;
+            const tipx = v.x + (tx - v.x) * v.len, tipy = v.y + (ty - v.y) * v.len; // reach straight toward the target
+            if (v.len >= 1 || Math.hypot(tx - tipx, ty - tipy) < 24) { // reached it — GRAB
+              t.vined = { vine: v, phase: "grab", tt: 0, gray: 0, startW: t.w, startH: t.h, cx: tx, cy: ty };
+              v.grab = t; v.target = null; v.state = "grab";
+            }
+          }
+        } else if (v.state === "grab") {
+          if (!v.grab || v.grab.dead || !v.grab.vined) { v.grab = null; v.state = "falling"; v.vy = -3; } // ate it — one-time use, now fall away
+        } else if (v.state === "falling") {
+          v.vy = (v.vy || 0) + 0.7; // the whole grass + vine drops off the screen
+          v.y += v.vy;
+          if (v.y > H + 80) v.gone = true;
+        } else { // retract back IN (the prey got away before it could grab)
+          v.len = Math.max(0, v.len - VINE_GROW);
+          if (v.len <= 0) v.state = "idle";
+        }
+      }
+      vines = vines.filter(v => !v.gone); // clear out used-up vines
+
       // age the cola drops and water droplets so they fade after their time is up
       for (const b of blocks) {
         if (b.life !== undefined && --b.life <= 0) b.dead = true;
@@ -2120,6 +2202,36 @@
         ctx.fillRect(-w / 2 + c * pw, -h / 2 + r * ph, pw + 0.6, ph + 0.6);
       }
     }
+    // draw the grass + the carnivorous vines ( _i__i_  — grass with vines poking out )
+    function drawVines() {
+      const now = Date.now() * 0.006;
+      for (const v of vines) {
+        const along = { x: -v.dir.y, y: v.dir.x }; // direction ALONG the surface
+        // grass tuft at the base (always there, even when the vine is hidden)
+        ctx.strokeStyle = "#2ecc40"; ctx.lineWidth = 4; ctx.lineCap = "round";
+        for (let i = -2; i <= 2; i++) {
+          const bx = v.x + along.x * i * 7, by = v.y + along.y * i * 7;
+          const bl = 12 + (2 - Math.abs(i)) * 4;
+          ctx.beginPath(); ctx.moveTo(bx, by);
+          ctx.lineTo(bx + v.dir.x * bl + along.x * i * 3, by + v.dir.y * bl + along.y * i * 3);
+          ctx.stroke();
+        }
+        if (v.len > 0.02) { // TWO vine stalks reaching out (to whatever they're holding)
+          let tipx, tipy;
+          if (v.grab) { tipx = v.grab.x + v.grab.w / 2; tipy = v.grab.y + v.grab.h / 2; }
+          else if (v.target) { tipx = v.x + (v.target.x + v.target.w / 2 - v.x) * v.len; tipy = v.y + (v.target.y + v.target.h / 2 - v.y) * v.len; } // aim at the target
+          else { tipx = v.x + v.dir.x * v.len * VINE_REACH; tipy = v.y + v.dir.y * v.len * VINE_REACH; }
+          ctx.strokeStyle = "#27ae38"; ctx.lineWidth = 6; ctx.lineCap = "round";
+          for (let s = -1; s <= 1; s += 2) { // left stalk + right stalk, both meeting at the tip
+            const bx = v.x + along.x * s * 9, by = v.y + along.y * s * 9;
+            const sway = Math.sin(now + v.sway + s) * 9 * v.len + s * 12 * v.len;
+            const midx = (bx + tipx) / 2 + along.x * sway, midy = (by + tipy) / 2 + along.y * sway;
+            ctx.beginPath(); ctx.moveTo(bx, by); ctx.quadraticCurveTo(midx, midy, tipx, tipy); ctx.stroke();
+          }
+          ctx.fillStyle = "#2ecc40"; ctx.beginPath(); ctx.arc(tipx, tipy, 7, 0, Math.PI * 2); ctx.fill(); // grabber tip
+        }
+      }
+    }
     function draw() {
       ctx.clearRect(0, 0, W, H);
       ctx.save();
@@ -2128,6 +2240,8 @@
       // ground line
       ctx.fillStyle = "#2c3e50";
       ctx.fillRect(0, H - 20, W, 20);
+
+      drawVines(); // grass + carnivorous vines on the surfaces
 
       // draw the glue lines so you can watch them snap
       ctx.strokeStyle = "rgba(255,255,255,0.25)";
@@ -2148,6 +2262,7 @@
         ctx.save();
         ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
         ctx.rotate(b.angle);
+        if (b.vined) ctx.filter = "grayscale(" + (b.vined.gray || 1) + ") brightness(0.75)"; // vined = turning gray
         if (customSprites[b.kind]) {
           drawSprite(customSprites[b.kind], b.w, b.h); // your hand-drawn sprite wins
         } else if (b.emoji) {
