@@ -92,6 +92,7 @@
     <button id="soulBtn" class="btn">👻 SOUL</button>
     <button id="spongeBtn" class="btn">🧽 SPONGE</button>
     <button id="entityBtn" class="btn">⬛ ENTITY</button>
+    <button id="virusBtn" class="btn">🦠 VIRUS</button>
     <button id="gunBtn" class="btn">🔫 GRAV GUN</button>
     <button id="jetBtn" class="btn">🚀 JET</button>
     <button id="squareBtn" class="btn">🟦 ADD SQUARE</button>
@@ -179,6 +180,7 @@
     const soulBtn = document.getElementById("soulBtn");
     const spongeBtn = document.getElementById("spongeBtn");
     const entityBtn = document.getElementById("entityBtn");
+    const virusBtn = document.getElementById("virusBtn");
     const gunBtn = document.getElementById("gunBtn");
     const jetBtn = document.getElementById("jetBtn");
     const squareBtn = document.getElementById("squareBtn");
@@ -206,6 +208,10 @@
     let bits = [];       // tiny squares that burst out when a Dave egg hatches
     let vines = [];      // carnivorous vines that grab, shrink & drag things under a surface
     const VINE_REACH = 130, VINE_DETECT = 155, VINE_GROW = 0.07, VINE_EAT_TIME = 75; // reach / sense / grow speed / how SLOWLY it shrinks & grays (bigger = slower)
+    const VIRUS_FLOAT = 0.6;                     // a phage has NO gravity — it slowly floats toward a host (~1 block/sec)
+    const VIRUS_STARVE = 600;                    // a phage with no food for this many frames (~10s) pops on its own
+    const VIRUS_INCUBATE = 95;                   // frames an infected thing swells to 2x before it POPS (bigger = slower)
+    const VIRUS_BABIES = 3;                      // how many new viruses burst out of a popped host
     let sticky = false;  // are the blocks glued right now?
     let shake = 0;
     let mode = "boom";   // "boom" = click explodes, "grab" = drag a block, "spawn" = drop an object
@@ -214,7 +220,7 @@
     // ===== DAVE knobs + per-asset sizes (tweak live in the MODEL editor) =====
     let DAVE_SPEED = 1.8, DAVE_EGG = 3, DAVE_RARE = 0.1;
     let sizeMult = {}, mdKind = "dave"; // size multiplier per asset kind
-    const MODEL_ASSETS = [["block","⬜"],["dave","🟩"],["goat","🐐"],["anvil","⚓"],["plane","✈️"],["helicopter","🚁"],["bird","🐦"],["combo","🔗"],["soul","👻"],["sponge","🧽"],["entity","⬛"],["gravgun","🔫"],["jet","🛩️"],["cola","🥤"]];
+    const MODEL_ASSETS = [["block","⬜"],["dave","🟩"],["goat","🐐"],["anvil","⚓"],["plane","✈️"],["helicopter","🚁"],["bird","🐦"],["combo","🔗"],["soul","👻"],["sponge","🧽"],["entity","⬛"],["gravgun","🔫"],["jet","🛩️"],["cola","🥤"],["virus","🦠"]];
     let customSprites = {}, spriteCells = [], paintColor = "#2ed573"; // hand-drawn pixel sprites per asset
     const SPRITE_COLS = 14, SPRITE_ROWS = 14;
     const SPRITE_PALETTE = ["#2ed573","#ff4757","#ffd32a","#1e90ff","#ff8a00","#a55eea","#ffffff","#000000","#8b5a2b","#95a5a6", null];
@@ -534,6 +540,7 @@
       if (kind === "entity") { w = 40; h = 40; mass = 2; } // black square that grows writhing limbs when touched
       if (kind === "gravgun") { w = 54; h = 26; mass = 2; } // HL2-style gravity gun you carry and fire
       if (kind === "jet") { w = 56; h = 28; mass = 2; } // jet engine: sucks blocks in and burns them into fire
+      if (kind === "virus") { w = 32; h = 44; mass = 0.9; } // bacteriophage: hops onto things and injects its DNA
       const sm = sizeMult[kind] || 1; w *= sm; h *= sm; // MODEL editor per-asset size
       const obj = {
         x: x - w / 2, y: y - h / 2, w, h,
@@ -543,6 +550,7 @@
       if (kind === "plane") obj.vx = 10;       // planes fly in!
       if (kind === "cola") obj.popped = false; // hasn't fizzed yet
       if (kind === "entity") { obj.activated = false; obj.growTimer = 0; obj.limbs = []; obj.eating = []; }
+      if (kind === "virus") { obj.color = "#a55eea"; obj.hopCD = 18 + Math.floor(Math.random() * 28); obj.legPhase = Math.random() * 6; } // purple alien phage
       if (kind === "gravgun") { obj.aim = -Math.PI / 2; obj.angle = -Math.PI / 2; obj.beamHold = null; obj.beamDist = 120; }
       if (kind === "jet") { obj.aim = 0; obj.angle = 0; obj.fuel = 0; obj.boost = 0; }
       if (kind === "combo") obj.stuck = [];
@@ -558,6 +566,47 @@
       if (kind === "flyinghelicopter") { obj.vx = 5; obj.fuel = 0; obj.flying = false; }
       if (kind === "seat" || kind === "landinggear" || kind === "tire" || kind === "propeller") obj.fireproof = true;
       blocks.push(obj);
+      return obj;
+    }
+
+    // a bacteriophage stabs in its spikes and injects its DNA — the host starts swelling, then POPS
+    function infectHost(o, phage) {
+      o.infected = { t: 0, baseW: o.w, baseH: o.h, color: injectColorFor(o), phage: phage || null };
+      if (phage) {
+        const dx = (o.x + o.w / 2) - (phage.x + phage.w / 2), dy = (o.y + o.h / 2) - (phage.y + phage.h / 2);
+        phage.injecting = o; phage.injAngle = Math.atan2(-dx, dy); // lock the spikes pointing at the host
+        phage.vx = 0; phage.vy = 0;
+      }
+      playPop(3); // squelch
+    }
+
+    // scatter a few triangle pieces of one color out of a point
+    function burstPieces(cx, cy, col, n) {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 4.5;
+        bits.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2.5, size: 5 + Math.random() * 6, color: col, shape: "triangle", spin: (Math.random() - 0.5) * 0.55, rot: Math.random() * 6 });
+      }
+    }
+
+    // the infected host bursts: triangle pieces fly out + VIRUS_BABIES new viruses hatch (and the spent phage pops too)
+    function burstVirus(b) {
+      const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      const col = (b.infected && b.infected.color) || b.color || "#a55eea";
+      burstPieces(cx, cy, col, 14 + Math.floor(Math.random() * 9)); // pieces of the popped thing
+      const phage = b.infected && b.infected.phage; // the original phage dies by popping as well
+      if (phage && !phage.dead) {
+        burstPieces(phage.x + phage.w / 2, phage.y + phage.h / 2, "#a55eea", 8);
+        phage.dead = true;
+      }
+      for (let i = 0; i < VIRUS_BABIES; i++) { // new viruses spray out of the host
+        const nv = addObject(cx, cy - 6, "virus");
+        const a = -Math.PI / 2 + (i - (VIRUS_BABIES - 1) / 2) * 0.7;
+        nv.vx = Math.cos(a) * (2.5 + Math.random() * 2);
+        nv.vy = Math.sin(a) * (4 + Math.random() * 2);
+        nv.hopCD = 14 + Math.floor(Math.random() * 20);
+      }
+      b.dead = true;
+      playPop(7); // the POP
     }
 
     // when a Dave egg hatches: tiny squares pop out and fall through the screen (Sonic/Mario death style)
@@ -592,6 +641,39 @@
       ctx.closePath(); ctx.fill();
       ctx.fillRect(-w * 0.16, -h / 2 + h * 0.32, w * 0.32, h * 0.36); // skinny waist
       ctx.fillRect(-w / 2, h / 2 - h * 0.3, w, h * 0.3);   // wide base
+    }
+
+    // can the anvil squish this into a pancake? (not another anvil, a pancake, or a liquid)
+    function canPancake(o) {
+      return o && !o.dead && o.kind !== "anvil" && o.kind !== "pancake" &&
+             o.kind !== "water" && o.kind !== "lava" && o.kind !== "coladrop";
+    }
+
+    // SQUISH! turn anything the anvil hits into a flat pancake with a pat of butter
+    function flattenToPancake(o) {
+      const cx = o.x + o.w / 2, bottom = o.y + o.h;
+      o.kind = "pancake"; o.emoji = null;
+      o.infected = null; o.injecting = null; o.egg = false; o.riding = null; o.floating = false;
+      o.activated = false; o.limbs = null; o.eating = null; o.target = null; o.fire = 0;
+      o.w = Math.max(o.w, 42) * 1.15;    // spread out a bit
+      o.h = 14;                           // squished flat
+      o.x = cx - o.w / 2; o.y = bottom - o.h; // stay sitting where it got flattened
+      o.angle = 0; o.spin = 0; o.vx = 0;
+      o.color = "#cf9b4e";                // pancake colour
+      playPop(5);                         // a squish!
+    }
+
+    // draw a flat pancake with a quarter-sized pat of butter sitting on top
+    function drawPancake(w, h) {
+      ctx.fillStyle = "#cf9b4e";                       // pancake-coloured flat square
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+      ctx.fillStyle = "#b9833a";                       // a lightly-browned rim
+      ctx.fillRect(-w / 2, h / 2 - 3, w, 3);
+      const bw = w * 0.3, bh = bw * 0.4;               // quarter-sized FLAT butter square
+      ctx.fillStyle = "#ffe9a3";
+      ctx.fillRect(-bw / 2, -h / 2 - bh, bw, bh);      // resting ON TOP of the pancake
+      ctx.fillStyle = "#f5d87a";                       // a little shading on the butter
+      ctx.fillRect(-bw / 2, -h / 2 - bh, bw, bh * 0.4);
     }
 
     // spray brown fizz-balls out of a tipped-over cola can
@@ -932,6 +1014,7 @@
       soulBtn.classList.toggle("active", m === "spawn" && spawnKind === "soul");
       spongeBtn.classList.toggle("active", m === "spawn" && spawnKind === "sponge");
       entityBtn.classList.toggle("active", m === "spawn" && spawnKind === "entity");
+      virusBtn.classList.toggle("active", m === "spawn" && spawnKind === "virus");
       gunBtn.classList.toggle("active", m === "spawn" && spawnKind === "gravgun");
       jetBtn.classList.toggle("active", m === "spawn" && spawnKind === "jet");
       squareBtn.classList.toggle("active", m === "spawn" && spawnKind === "block");
@@ -954,6 +1037,7 @@
     soulBtn.addEventListener("click", () => setMode("spawn", "soul"));
     spongeBtn.addEventListener("click", () => setMode("spawn", "sponge"));
     entityBtn.addEventListener("click", () => setMode("spawn", "entity"));
+    virusBtn.addEventListener("click", () => setMode("spawn", "virus"));
     gunBtn.addEventListener("click", () => setMode("spawn", "gravgun"));
     jetBtn.addEventListener("click", () => setMode("spawn", "jet"));
     let squareHoldTimer = null, squareHeld = false;
@@ -1197,6 +1281,7 @@
       { icon: "🧽", act: () => setMode("spawn", "sponge") },
       { icon: "🌿", act: () => setMode("vine") },
       { icon: "⬛", act: () => setMode("spawn", "entity") },
+      { icon: "🦠", act: () => setMode("spawn", "virus") },
       { icon: "🔫", act: () => setMode("spawn", "gravgun") },
       { icon: "🚀", act: () => setMode("spawn", "jet") },
       { icon: "🟦", act: () => setMode("spawn", "block") },
@@ -1527,6 +1612,7 @@
     function update() {
       const floor = H - 20;
       let maxSpeed = 0, jetPlaneActive = false, goatCharging = false, heliActive = false, fuelBurning = false, goatRiding = false;
+      const virusClaims = new Set(); // so each virus heads for a DIFFERENT target when it can
       for (const b of blocks) {
         if (b.captured) continue; // being eaten — the entity controls its position, skip normal physics
         if (b.vined) { // caught by a vine: gray + shrink to half, rise a little, then drag through the surface
@@ -1547,6 +1633,22 @@
             if (cx < -60 || cx > W + 60 || cy < -60 || cy > H + 60) { b.dead = true; if (v.grab === b) v.grab = null; }
           }
           b.vx = 0; b.vy = 0; b.spin = 0;
+          continue;
+        }
+        if (b.infected) { // DNA injected: swell toward 2x size, then POP into pieces + baby viruses
+          const inf = b.infected;
+          inf.t++;
+          const k = Math.min(1, inf.t / VIRUS_INCUBATE);
+          const s = 1 + k;                       // 1x -> 2x
+          const bottom = b.y + b.h, cx = b.x + b.w / 2; // grow from the bottom so it stays grounded
+          b.w = inf.baseW * s; b.h = inf.baseH * s;
+          b.x = cx - b.w / 2; b.y = bottom - b.h;
+          b.infK = k;                            // 0..1 for the draw tint/pulse
+          b.vy += GRAVITY; b.y += b.vy;
+          if (b.y + b.h > floor) { b.y = floor - b.h; b.vy = 0; }
+          if (b.x < 0) b.x = 0; if (b.x + b.w > W) b.x = W - b.w;
+          b.vx = 0; b.angle = 0; b.spin = 0;
+          if (inf.t >= VIRUS_INCUBATE) burstVirus(b);
           continue;
         }
         // a goat that touches a plane shrinks tiny and climbs into the cockpit
@@ -1572,7 +1674,7 @@
             continue; // glued to the plane — skip gravity/AI this frame
           }
         }
-        b.vy += GRAVITY;
+        if (b.kind !== "virus") b.vy += GRAVITY; // viruses float — no gravity
         if (b.kind === "bird") { // birds fly: shrug off gravity, flap, and wander around
           b.vy -= GRAVITY + 0.06;
           b.vy += (Math.random() - 0.5) * 0.5;
@@ -1716,6 +1818,58 @@
           b.vx += (Math.random() - 0.5) * 0.2;
           b.vy += (Math.random() - 0.5) * 0.2;
           b.vx *= 0.96; b.vy *= 0.96;
+        }
+        if (b.kind === "virus" && b.injecting) { // latched on, spikes stabbed in — ride the host and pump DNA
+          const o = b.injecting;
+          if (!o || o.dead || !o.infected) { b.dead = true; continue; } // host popped first -> phage is gone too
+          b.legPhase = (b.legPhase || 0) + 0.2;
+          const ang = b.injAngle || 0;
+          const sdx = -Math.sin(ang), sdy = Math.cos(ang);  // the way the spikes point (into the host)
+          const reach = o.w * 0.45;                          // ride the host's surface as it swells
+          b.x = (o.x + o.w / 2) - sdx * reach - b.w / 2;     // body outside, spikes buried in
+          b.y = (o.y + o.h / 2) - sdy * reach - b.h / 2;
+          b.vx = 0; b.vy = 0; b.angle = ang; b.spin = 0;
+          continue;
+        }
+        if (b.kind === "virus") { // bacteriophage: hop toward the nearest thing, land on it, inject DNA
+          b.legPhase = (b.legPhase || 0) + 0.3;
+          const vcx = b.x + b.w / 2, vcy = b.y + b.h / 2;
+          // find the nearest UNCLAIMED thing — so a swarm spreads out over different targets
+          let tgt = null, td = Infinity, shared = null, sd = Infinity;
+          for (const o of blocks) {
+            if (o === b || o.dead || o.captured || o.vined || o.infected) continue;
+            if (o.kind === "virus" && !cannibalism) continue; // skip other viruses unless cannibalism is on
+            if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+            const dd = Math.hypot((o.x + o.w / 2) - vcx, (o.y + o.h / 2) - vcy);
+            if (virusClaims.has(o)) { if (dd < sd) { sd = dd; shared = o; } continue; } // already taken
+            if (dd < td) { td = dd; tgt = o; }
+          }
+          if (!tgt) tgt = shared;          // every target is taken -> share the nearest
+          if (tgt) virusClaims.add(tgt);   // claim it so the next virus looks elsewhere
+          b.target = tgt;
+          // landed on a target? drop spike-side down and inject its DNA
+          let injected = false;
+          for (const o of blocks) {
+            if (o === b || o.dead || o.captured || o.vined || o.infected) continue;
+            if (o.kind === "virus" && !cannibalism) continue;
+            if (o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+            if (b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y) {
+              infectHost(o, b); injected = true; break;
+            }
+          }
+          if (!injected) {
+            if (tgt) { // float straight toward the prey at ~1 block/sec (no gravity)
+              const dx = (tgt.x + tgt.w / 2) - vcx, dy = (tgt.y + tgt.h / 2) - vcy, d = Math.hypot(dx, dy) || 1;
+              b.vx = dx / d * VIRUS_FLOAT; b.vy = dy / d * VIRUS_FLOAT;
+              b.angle = Math.atan2(-dx, dy); // turn so the SPIKES always point at the host
+              b.starve = 0;                  // found food — reset the starve clock
+            } else { // nothing to infect — drift, and starve
+              b.vx *= 0.9; b.vy *= 0.9;
+              b.starve = (b.starve || 0) + 1;
+              if (b.starve >= VIRUS_STARVE) { burstPieces(vcx, vcy, "#a55eea", 8); b.dead = true; playPop(5); } // starved -> POP
+            }
+          }
+          b.spin = 0;
         }
         if (b.kind === "dave" && b.egg) { // still an egg — sit tight, then hatch into a SMALL Dave
           b.vx = 0; b.spin = 0; b.angle = 0;
@@ -1893,6 +2047,7 @@
         for (let j = i + 1; j < blocks.length; j++) {
           const a = blocks[i], b = blocks[j];
           if (a.captured || b.captured || a.vined || b.vined) continue; // eaten/vined stuff doesn't collide
+          if (a.infected || b.infected || a.injecting || b.injecting) continue; // an infected host (and its phage) pass through everything
           // Daves noclip through each other; a goat & a plane pass through (the goat rides in the cockpit)
           const aG = a.kind === "goat" || a.kind === "soulgoat", bG = b.kind === "goat" || b.kind === "soulgoat";
           const aP = a.kind === "plane" || a.kind === "flyingplane", bP = b.kind === "plane" || b.kind === "flyingplane";
@@ -1945,6 +2100,9 @@
             // lava sets whatever it touches on fire
             if (a.kind === "lava") ignite(b);
             else if (b.kind === "lava") ignite(a);
+            // the ANVIL squishes whatever it touches into a pancake
+            if (a.kind === "anvil" && canPancake(b)) flattenToPancake(b);
+            else if (b.kind === "anvil" && canPancake(a)) flattenToPancake(a);
             // the entity wakes up when anything touches it
             if (a.kind === "entity") a.activated = true;
             if (b.kind === "entity") b.activated = true;
@@ -2203,6 +2361,93 @@
       }
     }
     // draw the grass + the carnivorous vines ( _i__i_  — grass with vines poking out )
+    // draw a bacteriophage, spikes pointing DOWN. The capsid is see-through — only the white DNA
+    // line (drawn later, on top of everything) shows clearly inside it.
+    function drawPhageBody(w, h, phase, translucent) {
+      const headR = w * 0.5, headCy = -h * 0.22;
+      // capsid head — a see-through hexagon
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = -Math.PI / 2 + i * Math.PI / 3;
+        const px = Math.cos(a) * headR, py = headCy + Math.sin(a) * headR * 0.92;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "rgba(165,94,234,0.18)"; ctx.fill();
+      ctx.strokeStyle = translucent ? "rgba(199,146,255,0.75)" : "#c792ff"; ctx.lineWidth = 2; ctx.stroke();
+      // tail sheath (tube)
+      const tubeW = w * 0.2, tubeTop = headCy + headR * 0.7, tubeBot = h * 0.2;
+      ctx.fillStyle = translucent ? "rgba(140,70,200,0.5)" : "#8b4ec8";
+      ctx.fillRect(-tubeW / 2, tubeTop, tubeW, tubeBot - tubeTop);
+      // baseplate
+      const bpW = w * 0.46;
+      ctx.fillRect(-bpW / 2, tubeBot, bpW, h * 0.05);
+      // tail fibers / spikes splaying down
+      ctx.strokeStyle = translucent ? "rgba(140,70,200,0.6)" : "#8b4ec8"; ctx.lineWidth = 2.4; ctx.lineCap = "round";
+      const legs = 5, spread = w * 0.55, tipY = h * 0.52;
+      for (let i = 0; i < legs; i++) {
+        const t = legs === 1 ? 0.5 : i / (legs - 1);
+        const bx = -bpW / 2 + bpW * t;
+        const tx = -spread / 2 + spread * t + Math.sin(phase + i) * w * 0.05;
+        ctx.beginPath();
+        ctx.moveTo(bx, tubeBot + h * 0.05);
+        ctx.lineTo((bx + tx) / 2, (tubeBot + tipY) / 2);
+        ctx.lineTo(tx, tipY);
+        ctx.stroke();
+      }
+      ctx.lineCap = "butt";
+    }
+
+    // a white wavy strand (the DNA) from point A to point B, tapered to nothing at both ends
+    function drawSquiggle(x0, y0, x1, y1, amp, waves, phase) {
+      const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const segs = Math.max(8, waves * 6);
+      ctx.beginPath();
+      for (let i = 0; i <= segs; i++) {
+        const t = i / segs;
+        const off = Math.sin(t * Math.PI * waves + phase) * amp * Math.sin(t * Math.PI);
+        const x = x0 + dx * t + nx * off, y = y0 + dy * t + ny * off;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    // the DNA — always drawn LAST so it sits in front of everything
+    function drawDNA() {
+      ctx.save();
+      ctx.strokeStyle = "#ffffff"; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      for (const b of blocks) {
+        if (b.kind === "virus" && !b.dead) {
+          const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2, th = b.angle || 0;
+          // the curved DNA line inside the capsid — drawn in the phage's own rotated frame
+          ctx.save();
+          ctx.translate(bcx, bcy); ctx.rotate(th);
+          ctx.lineWidth = Math.max(1.6, b.w * 0.06);
+          drawSquiggle(0, -b.h * 0.34, 0, -b.h * 0.1, b.w * 0.17, 2, b.legPhase || 0);
+          ctx.restore();
+          if (b.injecting && b.injecting.infected && !b.injecting.dead) { // pumping DNA from the spikes into the host
+            const o = b.injecting, p = Math.min(1, o.infected.t / VIRUS_INCUBATE);
+            const s = Math.sin(th), c = Math.cos(th), ly = b.h * 0.32; // the spike-tip exit point, rotated
+            const tipX = bcx - ly * s, tipY = bcy + ly * c;
+            const hcx = o.x + o.w / 2, hcy = o.y + o.h / 2;
+            const curX = tipX + (hcx - tipX) * Math.min(1, p * 1.3), curY = tipY + (hcy - tipY) * Math.min(1, p * 1.3);
+            ctx.lineWidth = Math.max(1.6, b.w * 0.05);
+            drawSquiggle(tipX, tipY, curX, curY, b.w * 0.14 + p * 6, 3 + Math.floor(p * 3), (b.legPhase || 0) * 1.5);
+          }
+        }
+        if (b.infected) { // DNA warping inside the host as it turns into a virus
+          const p = Math.min(1, b.infected.t / VIRUS_INCUBATE);
+          if (p > 0.2) {
+            const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+            ctx.lineWidth = Math.max(1.6, b.w * 0.05);
+            drawSquiggle(cx, cy - b.h * 0.22 * p, cx, cy + b.h * 0.22 * p, b.w * 0.2 * p, 3 + Math.floor(p * 4), b.infected.t * 0.2);
+          }
+        }
+      }
+      ctx.restore();
+    }
+
     function drawVines() {
       const now = Date.now() * 0.006;
       for (const v of vines) {
@@ -2316,9 +2561,18 @@
           const backX  = dir >= 0 ? (-b.w / 2) : (b.w / 2 - backW);   // back rectangle trails behind
           ctx.fillRect(frontX, bottom - front, front, front);          // front square
           ctx.fillRect(backX, bottom - backH, backW, backH);           // back rectangle (a little shorter)
+        } else if (b.kind === "virus") {
+          drawPhageBody(b.w, b.h, b.legPhase || 0, false); // the bacteriophage (DNA line drawn on top later)
+        } else if (b.kind === "pancake") {
+          drawPancake(b.w, b.h);
         } else {
           ctx.fillStyle = b.color;
           ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+        }
+        if (b.infected) { // warping INTO a virus: a purple phage fades in over the host as it swells
+          ctx.globalAlpha = 0.25 + 0.6 * (b.infK || 0);
+          drawPhageBody(b.w, b.h, (b.infected.t || 0) * 0.2, true);
+          ctx.globalAlpha = 1;
         }
         ctx.restore();
       }
@@ -2368,6 +2622,8 @@
         ctx.strokeStyle = "rgba(255,170,50,0.85)"; ctx.lineWidth = 4;
         ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(t.x + t.w / 2, t.y + t.h / 2); ctx.stroke();
       }
+
+      drawDNA(); // the white DNA line sits in front of EVERYTHING
 
       ctx.restore();
 
