@@ -94,6 +94,7 @@
     <button id="entityBtn" class="btn">⬛ ENTITY</button>
     <button id="virusBtn" class="btn">🦠 VIRUS</button>
     <button id="gumballBtn" class="btn">🔴 GUMBALL</button>
+    <button id="fireworkBtn" class="btn">🎆 FIREWORK</button>
     <button id="gunBtn" class="btn">🔫 GRAV GUN</button>
     <button id="jetBtn" class="btn">🚀 JET</button>
     <button id="squareBtn" class="btn">🟦 ADD SQUARE</button>
@@ -183,6 +184,7 @@
     const entityBtn = document.getElementById("entityBtn");
     const virusBtn = document.getElementById("virusBtn");
     const gumballBtn = document.getElementById("gumballBtn");
+    const fireworkBtn = document.getElementById("fireworkBtn");
     const gunBtn = document.getElementById("gunBtn");
     const jetBtn = document.getElementById("jetBtn");
     const squareBtn = document.getElementById("squareBtn");
@@ -208,6 +210,8 @@
     let bonds = [];      // the springy glue connections between blocks
     let flames = [];     // little rising fire triangles
     let bits = [];       // tiny squares that burst out when a Dave egg hatches
+    let sparks = [];     // glowing firework sparks that fade out
+    const FIREWORK_COLORS = ["#ff4757", "#ffa502", "#ffd32a", "#2ed573", "#1e90ff", "#a55eea", "#ff6fcf", "#ffffff"]; // bright firework colours
     let vines = [];      // carnivorous vines that grab, shrink & drag things under a surface
     const VINE_REACH = 130, VINE_DETECT = 155, VINE_GROW = 0.07, VINE_EAT_TIME = 75; // reach / sense / grow speed / how SLOWLY it shrinks & grays (bigger = slower)
     const VIRUS_FLOAT = 0.6;                     // a phage has NO gravity — it slowly floats toward a host (~1 block/sec)
@@ -225,7 +229,7 @@
     // ===== DAVE knobs + per-asset sizes (tweak live in the MODEL editor) =====
     let DAVE_SPEED = 1.8, DAVE_EGG = 3, DAVE_RARE = 0.1;
     let sizeMult = {}, mdKind = "dave"; // size multiplier per asset kind
-    const MODEL_ASSETS = [["block","⬜"],["dave","🟩"],["goat","🐐"],["anvil","⚓"],["plane","✈️"],["helicopter","🚁"],["bird","🐦"],["combo","🔗"],["soul","👻"],["sponge","🧽"],["entity","⬛"],["gravgun","🔫"],["jet","🛩️"],["cola","🥤"],["virus","🦠"],["gumballmachine","🔴"]];
+    const MODEL_ASSETS = [["block","⬜"],["dave","🟩"],["goat","🐐"],["anvil","⚓"],["plane","✈️"],["helicopter","🚁"],["bird","🐦"],["combo","🔗"],["soul","👻"],["sponge","🧽"],["entity","⬛"],["gravgun","🔫"],["jet","🛩️"],["cola","🥤"],["virus","🦠"],["gumballmachine","🔴"],["firework","🎆"]];
     let customSprites = {}, spriteCells = [], paintColor = "#2ed573"; // hand-drawn pixel sprites per asset
     const SPRITE_COLS = 14, SPRITE_ROWS = 14;
     const SPRITE_PALETTE = ["#2ed573","#ff4757","#ffd32a","#1e90ff","#ff8a00","#a55eea","#ffffff","#000000","#8b5a2b","#95a5a6", null];
@@ -435,6 +439,7 @@
       bonds = [];
       flames = [];
       bits = [];
+      sparks = [];
       vines = [];
       sticky = false;
       held = null;
@@ -548,6 +553,7 @@
       if (kind === "virus") { w = 32; h = 44; mass = 0.9; } // bacteriophage: hops onto things and injects its DNA
       if (kind === "gumballmachine") { w = 46; h = 68; mass = 6; } // click it to dispense gumballs
       if (kind === "gumball") { w = 18; h = 18; mass = 0.6; }       // a pink ball; splats into a pink pancake on contact
+      if (kind === "firework") { w = 10; h = 22; mass = 0.5; }      // a rocket that flies up and bursts into sparks
       const sm = sizeMult[kind] || 1; w *= sm; h *= sm; // MODEL editor per-asset size
       const obj = {
         x: x - w / 2, y: y - h / 2, w, h,
@@ -560,6 +566,7 @@
       if (kind === "virus") { obj.color = "#a55eea"; obj.hopCD = 18 + Math.floor(Math.random() * 28); obj.legPhase = Math.random() * 6; } // purple alien phage
       if (kind === "gumballmachine") obj.color = "#e23b4e"; // red machine
       if (kind === "gumball") { obj.color = GUMBALL_COLORS[Math.floor(Math.random() * GUMBALL_COLORS.length)]; obj.arm = 8; } // a candy-coloured ball; armed after a few frames
+      if (kind === "firework") { obj.vy = -9.5; obj.vx = (Math.random() - 0.5) * 1.5; obj.fuse = 42 + Math.floor(Math.random() * 18); obj.color = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)]; } // launches upward
       if (kind === "gravgun") { obj.aim = -Math.PI / 2; obj.angle = -Math.PI / 2; obj.beamHold = null; obj.beamDist = 120; }
       if (kind === "jet") { obj.aim = 0; obj.angle = 0; obj.fuel = 0; obj.boost = 0; }
       if (kind === "combo") obj.stuck = [];
@@ -670,6 +677,19 @@
       o.angle = 0; o.spin = 0; o.vx = 0;
       o.color = "#cf9b4e";                // pancake colour
       playPop(5);                         // a squish!
+    }
+
+    // a firework rocket bursts into a big shower of coloured, fading sparks
+    function explodeFirework(b) {
+      const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      const n = 38 + Math.floor(Math.random() * 22);
+      for (let i = 0; i < n; i++) {
+        const a = (Math.PI * 2 * i) / n + Math.random() * 0.25, sp = 2 + Math.random() * 4.5;
+        const col = Math.random() < 0.35 ? FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)] : b.color;
+        sparks.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 50 + Math.floor(Math.random() * 40), maxLife: 90, color: col, r: 2 + Math.random() * 2 });
+      }
+      b.dead = true;
+      playBoom(); // KABOOM!
     }
 
     // click the machine -> drop a gumball out the bottom
@@ -1088,6 +1108,7 @@
       entityBtn.classList.toggle("active", m === "spawn" && spawnKind === "entity");
       virusBtn.classList.toggle("active", m === "spawn" && spawnKind === "virus");
       gumballBtn.classList.toggle("active", m === "spawn" && spawnKind === "gumballmachine");
+      fireworkBtn.classList.toggle("active", m === "spawn" && spawnKind === "firework");
       gunBtn.classList.toggle("active", m === "spawn" && spawnKind === "gravgun");
       jetBtn.classList.toggle("active", m === "spawn" && spawnKind === "jet");
       squareBtn.classList.toggle("active", m === "spawn" && spawnKind === "block");
@@ -1112,6 +1133,7 @@
     entityBtn.addEventListener("click", () => setMode("spawn", "entity"));
     virusBtn.addEventListener("click", () => setMode("spawn", "virus"));
     gumballBtn.addEventListener("click", () => setMode("spawn", "gumballmachine"));
+    fireworkBtn.addEventListener("click", () => setMode("spawn", "firework"));
     gunBtn.addEventListener("click", () => setMode("spawn", "gravgun"));
     jetBtn.addEventListener("click", () => setMode("spawn", "jet"));
     let squareHoldTimer = null, squareHeld = false;
@@ -1363,6 +1385,7 @@
       { icon: "⬛", act: () => setMode("spawn", "entity") },
       { icon: "🦠", act: () => setMode("spawn", "virus") },
       { icon: "🔴", act: () => setMode("spawn", "gumballmachine") },
+      { icon: "🎆", act: () => setMode("spawn", "firework") },
       { icon: "🔫", act: () => setMode("spawn", "gravgun") },
       { icon: "🚀", act: () => setMode("spawn", "jet") },
       { icon: "🟦", act: () => setMode("spawn", "block") },
@@ -1954,6 +1977,11 @@
           b.spin = 0;
         }
         if (b.kind === "gumball") b.arm = (b.arm || 0) - 1; // just arm it — it only splats when it TOUCHES something (not the bare floor)
+        if (b.kind === "firework") { // a rocket: leave a sparkly trail, then burst at the top
+          b.fuse--;
+          sparks.push({ x: b.x + b.w / 2, y: b.y + b.h, vx: (Math.random() - 0.5) * 0.6, vy: 1 + Math.random(), life: 14, maxLife: 14, color: b.color, r: 1.6 + Math.random() }); // trail
+          if (b.fuse <= 0 || b.vy >= -0.5) { explodeFirework(b); } // fuse out, or reached the top of its arc
+        }
         if (b.kind === "dave" && b.egg) { // still an egg — sit tight, then hatch into a SMALL Dave
           b.vx = 0; b.spin = 0; b.angle = 0;
           if (--b.eggT <= 0) {
@@ -2132,6 +2160,7 @@
           if (a.captured || b.captured || a.vined || b.vined) continue; // eaten/vined stuff doesn't collide
           if (a.infected || b.infected || a.injecting || b.injecting) continue; // an infected host (and its phage) pass through everything
           if (a.kind === "gumsplat" || b.kind === "gumsplat") continue; // splats are flat decals on the ground
+          if (a.kind === "firework" || b.kind === "firework") continue; // rockets fly through everything
           if ((a.kind === "gumball" && b.kind === "gumballmachine") || (b.kind === "gumball" && a.kind === "gumballmachine")) continue; // gumballs pass through their machine
           // Daves noclip through each other; a goat & a plane pass through (the goat rides in the cockpit)
           const aG = a.kind === "goat" || a.kind === "soulgoat", bG = b.kind === "goat" || b.kind === "soulgoat";
@@ -2443,6 +2472,10 @@
       for (const p of bits) { p.vy += GRAVITY; p.x += p.vx; p.y += p.vy; p.rot += p.spin || 0; }
       bits = bits.filter(p => p.y < H + 40);
 
+      // firework sparks: drift, fall gently, and fade out
+      for (const s of sparks) { s.vy += 0.05; s.x += s.vx; s.y += s.vy; s.life--; }
+      sparks = sparks.filter(s => s.life > 0 && s.y < H + 40);
+
       updateScream(maxSpeed); // SCREAM when things are flying fast!
       updateJetDrone(jetPlaneActive); // flying planes hum like jet engines
       updateGoatScream(goatCharging); // a goat screams while it charges
@@ -2672,6 +2705,11 @@
         } else if (b.kind === "gumball") {
           ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(0, 0, b.w / 2, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.beginPath(); ctx.arc(-b.w * 0.15, -b.h * 0.15, b.w * 0.14, 0, Math.PI * 2); ctx.fill(); // shine
+        } else if (b.kind === "firework") {
+          ctx.fillStyle = b.color;
+          ctx.fillRect(-b.w / 2, -b.h * 0.3, b.w, b.h * 0.8);                                   // rocket body
+          ctx.beginPath(); ctx.moveTo(-b.w / 2, -b.h * 0.3); ctx.lineTo(0, -b.h * 0.6); ctx.lineTo(b.w / 2, -b.h * 0.3); ctx.closePath(); ctx.fill(); // nose cone
+          ctx.fillStyle = "#ffd24a"; ctx.beginPath(); ctx.arc(0, b.h * 0.5, b.w * 0.45, 0, Math.PI * 2); ctx.fill(); // flame at the tail
         } else {
           ctx.fillStyle = b.color;
           ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
@@ -2728,6 +2766,14 @@
         }
         ctx.restore();
       }
+
+      // firework sparks — glowing dots that fade as they fall
+      for (const s of sparks) {
+        ctx.globalAlpha = Math.max(0, s.life / s.maxLife);
+        ctx.fillStyle = s.color;
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
 
       // gravity gun beam
       if (held && held.kind === "gravgun" && held.beamHold) {
