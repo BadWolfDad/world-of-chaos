@@ -93,6 +93,7 @@
     <button id="spongeBtn" class="btn">🧽 SPONGE</button>
     <button id="entityBtn" class="btn">⬛ ENTITY</button>
     <button id="virusBtn" class="btn">🦠 VIRUS</button>
+    <button id="gumballBtn" class="btn">🔴 GUMBALL</button>
     <button id="gunBtn" class="btn">🔫 GRAV GUN</button>
     <button id="jetBtn" class="btn">🚀 JET</button>
     <button id="squareBtn" class="btn">🟦 ADD SQUARE</button>
@@ -181,6 +182,7 @@
     const spongeBtn = document.getElementById("spongeBtn");
     const entityBtn = document.getElementById("entityBtn");
     const virusBtn = document.getElementById("virusBtn");
+    const gumballBtn = document.getElementById("gumballBtn");
     const gunBtn = document.getElementById("gunBtn");
     const jetBtn = document.getElementById("jetBtn");
     const squareBtn = document.getElementById("squareBtn");
@@ -210,6 +212,9 @@
     const VINE_REACH = 130, VINE_DETECT = 155, VINE_GROW = 0.07, VINE_EAT_TIME = 75; // reach / sense / grow speed / how SLOWLY it shrinks & grays (bigger = slower)
     const VIRUS_FLOAT = 0.6;                     // a phage has NO gravity — it slowly floats toward a host (~1 block/sec)
     const VIRUS_STARVE = 600;                    // a phage with no food for this many frames (~10s) pops on its own
+    const GUM_SPLAT_W = 48, GUM_SPLAT_H = 14;    // a gumball splat: pancake-flat, a little bigger than a base block (40)
+    const GUMBALL_COLORS = ["#ff5fa2", "#ff6fcf", "#ff8bd0", "#ffa0dd"]; // candy pinks
+    const GUM_SPLAT_COLOR = "#ff6fcf";           // the pink splat colour
     const VIRUS_INCUBATE = 95;                   // frames an infected thing swells to 2x before it POPS (bigger = slower)
     const VIRUS_BABIES = 3;                      // how many new viruses burst out of a popped host
     let sticky = false;  // are the blocks glued right now?
@@ -220,7 +225,7 @@
     // ===== DAVE knobs + per-asset sizes (tweak live in the MODEL editor) =====
     let DAVE_SPEED = 1.8, DAVE_EGG = 3, DAVE_RARE = 0.1;
     let sizeMult = {}, mdKind = "dave"; // size multiplier per asset kind
-    const MODEL_ASSETS = [["block","⬜"],["dave","🟩"],["goat","🐐"],["anvil","⚓"],["plane","✈️"],["helicopter","🚁"],["bird","🐦"],["combo","🔗"],["soul","👻"],["sponge","🧽"],["entity","⬛"],["gravgun","🔫"],["jet","🛩️"],["cola","🥤"],["virus","🦠"]];
+    const MODEL_ASSETS = [["block","⬜"],["dave","🟩"],["goat","🐐"],["anvil","⚓"],["plane","✈️"],["helicopter","🚁"],["bird","🐦"],["combo","🔗"],["soul","👻"],["sponge","🧽"],["entity","⬛"],["gravgun","🔫"],["jet","🛩️"],["cola","🥤"],["virus","🦠"],["gumballmachine","🔴"]];
     let customSprites = {}, spriteCells = [], paintColor = "#2ed573"; // hand-drawn pixel sprites per asset
     const SPRITE_COLS = 14, SPRITE_ROWS = 14;
     const SPRITE_PALETTE = ["#2ed573","#ff4757","#ffd32a","#1e90ff","#ff8a00","#a55eea","#ffffff","#000000","#8b5a2b","#95a5a6", null];
@@ -541,6 +546,8 @@
       if (kind === "gravgun") { w = 54; h = 26; mass = 2; } // HL2-style gravity gun you carry and fire
       if (kind === "jet") { w = 56; h = 28; mass = 2; } // jet engine: sucks blocks in and burns them into fire
       if (kind === "virus") { w = 32; h = 44; mass = 0.9; } // bacteriophage: hops onto things and injects its DNA
+      if (kind === "gumballmachine") { w = 46; h = 68; mass = 6; } // click it to dispense gumballs
+      if (kind === "gumball") { w = 18; h = 18; mass = 0.6; }       // a pink ball; splats into a pink pancake on contact
       const sm = sizeMult[kind] || 1; w *= sm; h *= sm; // MODEL editor per-asset size
       const obj = {
         x: x - w / 2, y: y - h / 2, w, h,
@@ -551,6 +558,8 @@
       if (kind === "cola") obj.popped = false; // hasn't fizzed yet
       if (kind === "entity") { obj.activated = false; obj.growTimer = 0; obj.limbs = []; obj.eating = []; }
       if (kind === "virus") { obj.color = "#a55eea"; obj.hopCD = 18 + Math.floor(Math.random() * 28); obj.legPhase = Math.random() * 6; } // purple alien phage
+      if (kind === "gumballmachine") obj.color = "#e23b4e"; // red machine
+      if (kind === "gumball") { obj.color = GUMBALL_COLORS[Math.floor(Math.random() * GUMBALL_COLORS.length)]; obj.arm = 8; } // a candy-coloured ball; armed after a few frames
       if (kind === "gravgun") { obj.aim = -Math.PI / 2; obj.angle = -Math.PI / 2; obj.beamHold = null; obj.beamDist = 120; }
       if (kind === "jet") { obj.aim = 0; obj.angle = 0; obj.fuel = 0; obj.boost = 0; }
       if (kind === "combo") obj.stuck = [];
@@ -661,6 +670,69 @@
       o.angle = 0; o.spin = 0; o.vx = 0;
       o.color = "#cf9b4e";                // pancake colour
       playPop(5);                         // a squish!
+    }
+
+    // click the machine -> drop a gumball out the bottom
+    function dispenseGumball(m) {
+      const g = addObject(m.x + m.w / 2, m.y + m.h + 10, "gumball");
+      g.vy = 1.2; g.vx = (Math.random() - 0.5) * 1.2; g.arm = 8;
+      playPop(2); // little clunk
+    }
+
+    // can a gumball splat on this? (not the machine, another gumball, an existing splat, or a liquid)
+    function canGumTouch(o) {
+      return o && !o.dead && o.kind !== "gumballmachine" && o.kind !== "gumball" &&
+             o.kind !== "gumsplat" && o.kind !== "water" && o.kind !== "lava" && o.kind !== "coladrop";
+    }
+
+    // SPLAT! a gumball flattens into a pink rectangle that sits UNDER what it touched and glues it to the ground
+    function makeGumSplat(ball, o) {
+      const baseY = o ? (o.y + o.h) : (H - 20);          // under the object's base, or on the floor
+      const cx = o ? (o.x + o.w / 2) : (ball.x + ball.w / 2);
+      ball.kind = "gumsplat"; ball.emoji = null;
+      ball.w = GUM_SPLAT_W; ball.h = GUM_SPLAT_H;
+      ball.x = cx - ball.w / 2; ball.y = baseY - ball.h;
+      ball.color = GUM_SPLAT_COLOR;
+      ball.vx = 0; ball.vy = 0; ball.angle = 0; ball.spin = 0;
+      ball.stuck = true; ball.mass = 9999;               // the splat never moves
+      if (o && canGumTouch(o)) {
+        o.stuck = true; o.vx = 0; o.vy = 0; o.spin = 0;
+        o.origMass = o.origMass || o.mass; o.mass = Math.max(o.mass, 9999); // glued down
+        ball.stuckTo = o;                                 // remember it, so we can free it later
+      }
+      playPop(3);
+    }
+
+    // grab-and-move a splat -> it bursts into pink triangles and frees whatever it had glued down
+    function popGumSplat(s) {
+      burstPieces(s.x + s.w / 2, s.y + s.h / 2, s.color || GUM_SPLAT_COLOR, 12);
+      if (s.stuckTo && !s.stuckTo.dead) { s.stuckTo.stuck = false; s.stuckTo.mass = s.stuckTo.origMass || 1; }
+      s.dead = true;
+      playPop(5);
+    }
+
+    // draw the gumball machine: glass globe full of gumballs on a red base
+    function drawGumballMachine(w, h) {
+      const globeR = w * 0.5, globeCy = -h * 0.22;
+      // base + stand
+      ctx.fillStyle = "#e23b4e";
+      ctx.fillRect(-w * 0.42, h * 0.1, w * 0.84, h * 0.4);     // body
+      ctx.fillRect(-w * 0.5, h * 0.42, w, h * 0.08);           // foot
+      ctx.fillStyle = "#b02a3a";
+      ctx.fillRect(-w * 0.12, h * 0.16, w * 0.24, h * 0.12);   // coin slot / dispenser
+      // glass globe
+      ctx.fillStyle = "rgba(220,240,255,0.35)";
+      ctx.beginPath(); ctx.arc(0, globeCy, globeR, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 2; ctx.stroke();
+      // gumballs inside
+      const dots = [[-0.2, -0.3], [0.18, -0.34], [-0.33, 0], [0.3, -0.05], [0, -0.1], [-0.08, 0.22], [0.22, 0.2], [-0.28, -0.22]];
+      for (const [dx, dy] of dots) {
+        ctx.fillStyle = GUMBALL_COLORS[Math.floor(Math.abs(dx * 97 + dy * 53)) % GUMBALL_COLORS.length];
+        ctx.beginPath(); ctx.arc(dx * globeR * 1.3, globeCy + dy * globeR * 1.3, globeR * 0.22, 0, Math.PI * 2); ctx.fill();
+      }
+      // metal lid
+      ctx.fillStyle = "#c0c6cc";
+      ctx.fillRect(-globeR * 0.5, globeCy - globeR - h * 0.03, globeR, h * 0.05);
     }
 
     // draw a flat pancake with a quarter-sized pat of butter sitting on top
@@ -1015,6 +1087,7 @@
       spongeBtn.classList.toggle("active", m === "spawn" && spawnKind === "sponge");
       entityBtn.classList.toggle("active", m === "spawn" && spawnKind === "entity");
       virusBtn.classList.toggle("active", m === "spawn" && spawnKind === "virus");
+      gumballBtn.classList.toggle("active", m === "spawn" && spawnKind === "gumballmachine");
       gunBtn.classList.toggle("active", m === "spawn" && spawnKind === "gravgun");
       jetBtn.classList.toggle("active", m === "spawn" && spawnKind === "jet");
       squareBtn.classList.toggle("active", m === "spawn" && spawnKind === "block");
@@ -1038,6 +1111,7 @@
     spongeBtn.addEventListener("click", () => setMode("spawn", "sponge"));
     entityBtn.addEventListener("click", () => setMode("spawn", "entity"));
     virusBtn.addEventListener("click", () => setMode("spawn", "virus"));
+    gumballBtn.addEventListener("click", () => setMode("spawn", "gumballmachine"));
     gunBtn.addEventListener("click", () => setMode("spawn", "gravgun"));
     jetBtn.addEventListener("click", () => setMode("spawn", "jet"));
     let squareHoldTimer = null, squareHeld = false;
@@ -1178,6 +1252,8 @@
           const d = Math.hypot(x - (b.x + b.w / 2), y - (b.y + b.h / 2));
           if (d < bestDist) { bestDist = d; best = b; }
         }
+        if (best && best.kind === "gumballmachine") { best.grabX = x; best.grabY = y; held = best; canvas.style.cursor = "grabbing"; return; } // tap = dispense, drag = move
+        if (best && best.kind === "gumsplat") { best.grabX = x; best.grabY = y; held = best; canvas.style.cursor = "grabbing"; return; } // grab the gum; moving it pops it
         if (best && (best.kind === "gravgun" || best.kind === "jet")) held = (held === best ? null : best);
         else held = best;
         canvas.style.cursor = "grabbing";
@@ -1189,6 +1265,10 @@
     }
     function pointerRelease() {
       pointerDown = false; draggingTank = false;
+      if (held && held.kind === "gumballmachine") { // a tap (barely moved) dispenses; a drag just drops it where it is
+        if (Math.hypot(mouse.x - (held.grabX ?? mouse.x), mouse.y - (held.grabY ?? mouse.y)) < 6) dispenseGumball(held);
+        held = null; if (mode === "grab") canvas.style.cursor = "grab"; return;
+      }
       if (!held || (held.kind !== "gravgun" && held.kind !== "jet")) held = null; // carried tools stay in your hand until you click again
       if (mode === "grab") canvas.style.cursor = "grab";
     }
@@ -1282,6 +1362,7 @@
       { icon: "🌿", act: () => setMode("vine") },
       { icon: "⬛", act: () => setMode("spawn", "entity") },
       { icon: "🦠", act: () => setMode("spawn", "virus") },
+      { icon: "🔴", act: () => setMode("spawn", "gumballmachine") },
       { icon: "🔫", act: () => setMode("spawn", "gravgun") },
       { icon: "🚀", act: () => setMode("spawn", "jet") },
       { icon: "🟦", act: () => setMode("spawn", "block") },
@@ -1615,6 +1696,7 @@
       const virusClaims = new Set(); // so each virus heads for a DIFFERENT target when it can
       for (const b of blocks) {
         if (b.captured) continue; // being eaten — the entity controls its position, skip normal physics
+        if (b.stuck) { b.vx = 0; b.vy = 0; b.spin = 0; continue; } // glued down by gum — never moves
         if (b.vined) { // caught by a vine: gray + shrink to half, rise a little, then drag through the surface
           const g = b.vined, v = g.vine;
           g.tt = (g.tt || 0) + 1;
@@ -1871,6 +1953,7 @@
           }
           b.spin = 0;
         }
+        if (b.kind === "gumball") b.arm = (b.arm || 0) - 1; // just arm it — it only splats when it TOUCHES something (not the bare floor)
         if (b.kind === "dave" && b.egg) { // still an egg — sit tight, then hatch into a SMALL Dave
           b.vx = 0; b.spin = 0; b.angle = 0;
           if (--b.eggT <= 0) {
@@ -2048,6 +2131,8 @@
           const a = blocks[i], b = blocks[j];
           if (a.captured || b.captured || a.vined || b.vined) continue; // eaten/vined stuff doesn't collide
           if (a.infected || b.infected || a.injecting || b.injecting) continue; // an infected host (and its phage) pass through everything
+          if (a.kind === "gumsplat" || b.kind === "gumsplat") continue; // splats are flat decals on the ground
+          if ((a.kind === "gumball" && b.kind === "gumballmachine") || (b.kind === "gumball" && a.kind === "gumballmachine")) continue; // gumballs pass through their machine
           // Daves noclip through each other; a goat & a plane pass through (the goat rides in the cockpit)
           const aG = a.kind === "goat" || a.kind === "soulgoat", bG = b.kind === "goat" || b.kind === "soulgoat";
           const aP = a.kind === "plane" || a.kind === "flyingplane", bP = b.kind === "plane" || b.kind === "flyingplane";
@@ -2103,6 +2188,9 @@
             // the ANVIL squishes whatever it touches into a pancake
             if (a.kind === "anvil" && canPancake(b)) flattenToPancake(b);
             else if (b.kind === "anvil" && canPancake(a)) flattenToPancake(a);
+            // a GUMBALL splats into a pink rectangle the moment it touches something solid
+            if (a.kind === "gumball" && a.arm <= 0 && canGumTouch(b)) makeGumSplat(a, b);
+            else if (b.kind === "gumball" && b.arm <= 0 && canGumTouch(a)) makeGumSplat(b, a);
             // the entity wakes up when anything touches it
             if (a.kind === "entity") a.activated = true;
             if (b.kind === "entity") b.activated = true;
@@ -2115,11 +2203,23 @@
 
       // if you're holding a block, drag it to follow your mouse (and fling it on release)
       if (held) {
-        const nx = mouse.x - held.w / 2;
-        const ny = mouse.y - held.h / 2;
-        held.vx = nx - held.x;
-        held.vy = ny - held.y;
-        held.x = nx; held.y = ny;
+        if (held.kind === "gumsplat") { // grabbing & MOVING the gum pops it
+          if (Math.hypot(mouse.x - (held.grabX ?? mouse.x), mouse.y - (held.grabY ?? mouse.y)) > 6) { popGumSplat(held); held = null; }
+        } else if (held.kind === "gumballmachine") { // only start dragging once you actually move (a tap dispenses on release)
+          if (Math.hypot(mouse.x - (held.grabX ?? mouse.x), mouse.y - (held.grabY ?? mouse.y)) > 6) {
+            const nx = mouse.x - held.w / 2, ny = mouse.y - held.h / 2;
+            held.vx = nx - held.x; held.vy = ny - held.y;
+            held.x = nx; held.y = ny;
+          }
+        } else if (held.stuck) {
+          // glued down by gum — can't drag it (pop its splat to free it)
+        } else {
+          const nx = mouse.x - held.w / 2;
+          const ny = mouse.y - held.h / 2;
+          held.vx = nx - held.x;
+          held.vy = ny - held.y;
+          held.x = nx; held.y = ny;
+        }
       }
 
       // gravity gun: if you're carrying one, its beam grabs and moves an object
@@ -2503,7 +2603,9 @@
         if (b.kind === "entity" && b.activated) drawEntityLimbs(b);
       }
 
+
       for (const b of blocks) {
+        if (b.kind === "gumsplat") continue; // already drawn as a decal under everything
         ctx.save();
         ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
         ctx.rotate(b.angle);
@@ -2565,6 +2667,11 @@
           drawPhageBody(b.w, b.h, b.legPhase || 0, false); // the bacteriophage (DNA line drawn on top later)
         } else if (b.kind === "pancake") {
           drawPancake(b.w, b.h);
+        } else if (b.kind === "gumballmachine") {
+          drawGumballMachine(b.w, b.h);
+        } else if (b.kind === "gumball") {
+          ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(0, 0, b.w / 2, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.beginPath(); ctx.arc(-b.w * 0.15, -b.h * 0.15, b.w * 0.14, 0, Math.PI * 2); ctx.fill(); // shine
         } else {
           ctx.fillStyle = b.color;
           ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
@@ -2575,6 +2682,13 @@
           ctx.globalAlpha = 1;
         }
         ctx.restore();
+      }
+
+      // gum splats draw IN FRONT of what they're stuck to
+      for (const b of blocks) {
+        if (b.kind !== "gumsplat") continue;
+        ctx.fillStyle = b.color;
+        ctx.fillRect(b.x, b.y, b.w, b.h);
       }
 
       // fuel bars above flying aircraft (shown while fuel is 1+, gone at 0)
