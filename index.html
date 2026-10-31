@@ -95,6 +95,7 @@
     <button id="virusBtn" class="btn">🦠 VIRUS</button>
     <button id="gumballBtn" class="btn">🔴 GUMBALL</button>
     <button id="fireworkBtn" class="btn">🎆 FIREWORK</button>
+    <button id="satelliteBtn" class="btn">🛸 SATELLITE</button>
     <button id="gunBtn" class="btn">🔫 GRAV GUN</button>
     <button id="jetBtn" class="btn">🚀 JET</button>
     <button id="squareBtn" class="btn">🟦 ADD SQUARE</button>
@@ -186,6 +187,7 @@
     const virusBtn = document.getElementById("virusBtn");
     const gumballBtn = document.getElementById("gumballBtn");
     const fireworkBtn = document.getElementById("fireworkBtn");
+    const satelliteBtn = document.getElementById("satelliteBtn");
     const gunBtn = document.getElementById("gunBtn");
     const jetBtn = document.getElementById("jetBtn");
     const squareBtn = document.getElementById("squareBtn");
@@ -234,7 +236,7 @@
     // ===== DAVE knobs + per-asset sizes (tweak live in the MODEL editor) =====
     let DAVE_SPEED = 1.8, DAVE_EGG = 3, DAVE_RARE = 0.1;
     let sizeMult = {}, mdKind = "dave"; // size multiplier per asset kind
-    const MODEL_ASSETS = [["block","⬜"],["dave","🟩"],["goat","🐐"],["anvil","⚓"],["plane","✈️"],["helicopter","🚁"],["bird","🐦"],["combo","🔗"],["soul","👻"],["sponge","🧽"],["entity","⬛"],["gravgun","🔫"],["jet","🛩️"],["cola","🥤"],["virus","🦠"],["gumballmachine","🔴"],["firework","🎆"]];
+    const MODEL_ASSETS = [["block","⬜"],["dave","🟩"],["goat","🐐"],["anvil","⚓"],["plane","✈️"],["helicopter","🚁"],["bird","🐦"],["combo","🔗"],["soul","👻"],["sponge","🧽"],["entity","⬛"],["gravgun","🔫"],["jet","🛩️"],["cola","🥤"],["virus","🦠"],["gumballmachine","🔴"],["firework","🎆"],["satellite","🛸"]];
     let customSprites = {}, spriteCells = [], paintColor = "#2ed573"; // hand-drawn pixel sprites per asset
     const SPRITE_COLS = 14, SPRITE_ROWS = 14;
     const SPRITE_PALETTE = ["#2ed573","#ff4757","#ffd32a","#1e90ff","#ff8a00","#a55eea","#ffffff","#000000","#8b5a2b","#95a5a6", null];
@@ -560,6 +562,7 @@
       if (kind === "gumballmachine") { w = 46; h = 68; mass = 6; } // click it to dispense gumballs
       if (kind === "gumball") { w = 18; h = 18; mass = 0.6; }       // a pink ball; splats into a pink pancake on contact
       if (kind === "firework") { w = 10; h = 22; mass = 0.5; }      // a rocket that flies up and bursts into sparks
+      if (kind === "satellite") { w = 40; h = 30; mass = 0.6; }     // a flying dish that zaps things into liquid
       const sm = sizeMult[kind] || 1; w *= sm; h *= sm; // MODEL editor per-asset size
       const obj = {
         x: x - w / 2, y: y - h / 2, w, h,
@@ -570,6 +573,7 @@
       if (kind === "cola") obj.popped = false; // hasn't fizzed yet
       if (kind === "entity") { obj.activated = false; obj.growTimer = 0; obj.limbs = []; obj.eating = []; }
       if (kind === "virus") { obj.color = "#a55eea"; obj.hopCD = 18 + Math.floor(Math.random() * 28); obj.legPhase = Math.random() * 6; } // purple alien phage
+      if (kind === "satellite") { obj.color = "#9aa6b2"; obj.satState = "scan"; obj.satTarget = null; obj.vx = (Math.random() - 0.5) * 2; obj.vy = (Math.random() - 0.5) * 1.5; } // flying zapper
       if (kind === "gumballmachine") obj.color = "#e23b4e"; // red machine
       if (kind === "gumball") { obj.color = GUMBALL_COLORS[Math.floor(Math.random() * GUMBALL_COLORS.length)]; obj.arm = 8; } // a candy-coloured ball; armed after a few frames
       if (kind === "firework") { obj.vy = -9.5; obj.vx = (Math.random() - 0.5) * 1.5; obj.fuse = 42 + Math.floor(Math.random() * 18); obj.color = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)]; } // launches upward
@@ -1115,6 +1119,7 @@
       virusBtn.classList.toggle("active", m === "spawn" && spawnKind === "virus");
       gumballBtn.classList.toggle("active", m === "spawn" && spawnKind === "gumballmachine");
       fireworkBtn.classList.toggle("active", m === "spawn" && spawnKind === "firework");
+      satelliteBtn.classList.toggle("active", m === "spawn" && spawnKind === "satellite");
       gunBtn.classList.toggle("active", m === "spawn" && spawnKind === "gravgun");
       jetBtn.classList.toggle("active", m === "spawn" && spawnKind === "jet");
       squareBtn.classList.toggle("active", m === "spawn" && spawnKind === "block");
@@ -1141,6 +1146,7 @@
     virusBtn.addEventListener("click", () => setMode("spawn", "virus"));
     gumballBtn.addEventListener("click", () => setMode("spawn", "gumballmachine"));
     fireworkBtn.addEventListener("click", () => setMode("spawn", "firework"));
+    satelliteBtn.addEventListener("click", () => setMode("spawn", "satellite"));
     gunBtn.addEventListener("click", () => setMode("spawn", "gravgun"));
     jetBtn.addEventListener("click", () => setMode("spawn", "jet"));
     let squareHoldTimer = null, squareHeld = false;
@@ -1408,6 +1414,7 @@
       { icon: "🦠", act: () => setMode("spawn", "virus") },
       { icon: "🔴", act: () => setMode("spawn", "gumballmachine") },
       { icon: "🎆", act: () => setMode("spawn", "firework") },
+      { icon: "🛸", act: () => setMode("spawn", "satellite") },
       { icon: "🔫", act: () => setMode("spawn", "gravgun") },
       { icon: "🚀", act: () => setMode("spawn", "jet") },
       { icon: "🟦", act: () => setMode("spawn", "block") },
@@ -1811,7 +1818,7 @@
             continue; // glued to the plane — skip gravity/AI this frame
           }
         }
-        if (b.kind !== "virus") b.vy += GRAVITY; // viruses float — no gravity
+        if (b.kind !== "virus" && b.kind !== "satellite") b.vy += GRAVITY; // viruses & satellites float — no gravity
         if (b.kind === "bird") { // birds fly: shrug off gravity, flap, and wander around
           b.vy -= GRAVITY + 0.06;
           b.vy += (Math.random() - 0.5) * 0.5;
@@ -1967,6 +1974,37 @@
           b.y = (o.y + o.h / 2) - sdy * reach - b.h / 2;
           b.vx = 0; b.vy = 0; b.angle = ang; b.spin = 0;
           continue;
+        }
+        if (b.kind === "satellite") { // a flying dish: drift around, zap the nearest thing, slurp up the liquid
+          b.vx += (Math.random() - 0.5) * 0.3; b.vy += (Math.random() - 0.5) * 0.3;
+          b.vx = Math.max(-2.2, Math.min(2.2, b.vx)); b.vy = Math.max(-2, Math.min(2, b.vy));
+          if (b.x < 0) { b.x = 0; b.vx = Math.abs(b.vx); }
+          if (b.x + b.w > W) { b.x = W - b.w; b.vx = -Math.abs(b.vx); }
+          if (b.y < 0) { b.y = 0; b.vy = Math.abs(b.vy); }
+          if (b.y + b.h > floor - 50) { b.y = floor - 50 - b.h; b.vy = -Math.abs(b.vy); } // stay up in the air
+          b.angle = 0; b.spin = 0;
+          const scx = b.x + b.w / 2, scy = b.y + b.h / 2;
+          if (b.satState === "scan") {
+            let best = null, bd = DISH_RANGE;
+            for (const o of blocks) {
+              if (o === b || o.dead || o.vined || o.captured || o.zapped) continue;
+              if (o.kind === "satellite" || o.kind === "water" || o.kind === "lava" || o.kind === "coladrop") continue;
+              const d = Math.hypot((o.x + o.w / 2) - scx, (o.y + o.h / 2) - scy);
+              if (d < bd) { bd = d; best = o; }
+            }
+            if (best) { best.zapped = { t: 0, w0: best.w, h0: best.h, cx: best.x + best.w / 2, cy: best.y + best.h / 2, done: false }; b.satTarget = best; b.satState = "zap"; }
+          } else if (b.satState === "zap") {
+            const t = b.satTarget;
+            if (!t || t.dead || !t.zapped) { b.satTarget = null; b.satState = "scan"; }
+            else if (t.zapped.done) {
+              const col = injectColorFor(t), cx = t.x + t.w / 2, cy = t.y + t.h / 2;
+              const n = Math.min(45, 6 + Math.round(blocks.length * 1.5));
+              for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 2.5; goo.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, color: col, dish: b, size: 4 + Math.random() * 4 }); }
+              t.dead = true; t.zapped = null; b.satTarget = null; b.satState = "suck"; playPop(4);
+            }
+          } else if (b.satState === "suck") {
+            if (!goo.some(g => g.dish === b)) b.satState = "scan";
+          }
         }
         if (b.kind === "virus") { // bacteriophage: hop toward the nearest thing, land on it, inject DNA
           b.legPhase = (b.legPhase || 0) + 0.3;
@@ -2191,6 +2229,7 @@
           const a = blocks[i], b = blocks[j];
           if (a.captured || b.captured || a.vined || b.vined) continue; // eaten/vined stuff doesn't collide
           if (a.infected || b.infected || a.injecting || b.injecting) continue; // an infected host (and its phage) pass through everything
+          if (a.zapped || b.zapped) continue; // a thing being melted by a dish doesn't shove anything
           if (a.kind === "gumsplat" || b.kind === "gumsplat") continue; // splats are flat decals on the ground
           if (a.kind === "firework" || b.kind === "firework") continue; // rockets fly through everything
           if ((a.kind === "gumball" && b.kind === "gumballmachine") || (b.kind === "gumball" && a.kind === "gumballmachine")) continue; // gumballs pass through their machine
@@ -2482,7 +2521,7 @@
           let best = null, bd = DISH_RANGE;
           for (const b of blocks) {
             if (b.dead || b.vined || b.captured || b.zapped) continue;
-            if (b.kind === "water" || b.kind === "lava" || b.kind === "coladrop") continue;
+            if (b.kind === "satellite" || b.kind === "water" || b.kind === "lava" || b.kind === "coladrop") continue;
             const ox = (b.x + b.w / 2) - d.x, oy = (b.y + b.h / 2) - d.y;
             if (ox * d.dir.x + oy * d.dir.y < 4) continue; // must be on the inward side of the surface
             const dd = Math.hypot(ox, oy);
@@ -2508,13 +2547,16 @@
         }
       }
 
-      // liquid goo flies back toward its dish and vanishes when it arrives
+      // liquid goo flies back toward its dish (wall dish OR flying satellite) and vanishes when it arrives
       for (const g of goo) {
-        const dx = g.dish.x - g.x, dy = g.dish.y - g.y, dd = Math.hypot(dx, dy) || 1;
+        if (g.dish.dead) { g.gone = true; continue; }     // its satellite got destroyed
+        const tx = g.dish.w ? g.dish.x + g.dish.w / 2 : g.dish.x; // satellites use their centre
+        const ty = g.dish.h ? g.dish.y + g.dish.h / 2 : g.dish.y;
+        const dx = tx - g.x, dy = ty - g.y, dd = Math.hypot(dx, dy) || 1;
         g.vx += (dx / dd) * DISH_SUCK; g.vy += (dy / dd) * DISH_SUCK;
         g.vx *= 0.92; g.vy *= 0.92;
         g.x += g.vx; g.y += g.vy;
-        if (dd < 14) g.gone = true; // slurped into the dish
+        if (dd < 14) g.gone = true; // slurped in
       }
       goo = goo.filter(g => !g.gone);
 
@@ -2691,6 +2733,17 @@
         ctx.fillStyle = g.color;
         ctx.beginPath(); ctx.arc(g.x, g.y, g.size / 2, 0, Math.PI * 2); ctx.fill();
       }
+      // flying-satellite zap beams
+      for (const b of blocks) {
+        if (b.kind === "satellite" && b.satState === "zap" && b.satTarget && !b.satTarget.dead) {
+          const sx = b.x + b.w / 2, sy = b.y + b.h / 2;
+          const tx = b.satTarget.x + b.satTarget.w / 2, ty = b.satTarget.y + b.satTarget.h / 2;
+          ctx.strokeStyle = "rgba(120,230,255,0.85)"; ctx.lineWidth = 6; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
+          ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty); ctx.stroke();
+        }
+      }
       for (const d of dishes) {
         const along = { x: -d.dir.y, y: d.dir.x };     // direction ALONG the surface
         const bx = d.x + d.dir.x * 8, by = d.y + d.dir.y * 8; // dish sits a little off the wall
@@ -2819,6 +2872,13 @@
           ctx.fillRect(-b.w / 2, -b.h * 0.3, b.w, b.h * 0.8);                                   // rocket body
           ctx.beginPath(); ctx.moveTo(-b.w / 2, -b.h * 0.3); ctx.lineTo(0, -b.h * 0.6); ctx.lineTo(b.w / 2, -b.h * 0.3); ctx.closePath(); ctx.fill(); // nose cone
           ctx.fillStyle = "#ffd24a"; ctx.beginPath(); ctx.arc(0, b.h * 0.5, b.w * 0.45, 0, Math.PI * 2); ctx.fill(); // flame at the tail
+        } else if (b.kind === "satellite") {
+          ctx.fillStyle = "#c0c6cc"; ctx.beginPath(); ctx.ellipse(0, b.h * 0.12, b.w / 2, b.h * 0.34, 0, 0, Math.PI * 2); ctx.fill(); // saucer
+          ctx.fillStyle = "#9aa6b2"; ctx.beginPath(); ctx.ellipse(0, -b.h * 0.05, b.w * 0.28, b.h * 0.32, 0, 0, Math.PI * 2); ctx.fill(); // dome
+          ctx.fillStyle = "#78e6ff"; ctx.beginPath(); ctx.arc(0, -b.h * 0.08, b.w * 0.12, 0, Math.PI * 2); ctx.fill(); // eye
+          ctx.fillStyle = "#e74c3c";
+          ctx.beginPath(); ctx.arc(-b.w * 0.3, b.h * 0.14, 2.5, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(b.w * 0.3, b.h * 0.14, 2.5, 0, Math.PI * 2); ctx.fill();
         } else {
           ctx.fillStyle = b.color;
           ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
