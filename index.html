@@ -100,6 +100,7 @@
     <button id="squareBtn" class="btn">🟦 ADD SQUARE</button>
     <button id="bucketBtn" class="btn">🪣 BUCKET</button>
     <button id="vineBtn" class="btn">🌿 VINE</button>
+    <button id="dishBtn" class="btn">📡 DISH</button>
     <button id="vacBtn" class="btn">🌀 VACUUM</button>
     <button id="needleBtn" class="btn">💉 NEEDLE</button>
     <button id="stickBtn" class="btn">🔗 STICK</button>
@@ -191,6 +192,7 @@
     const bucketBtn = document.getElementById("bucketBtn");
     const vacBtn = document.getElementById("vacBtn");
     const vineBtn = document.getElementById("vineBtn");
+    const dishBtn = document.getElementById("dishBtn");
     const needleBtn = document.getElementById("needleBtn");
     const cannibalBtn = document.getElementById("cannibalBtn");
     const takeoffBtn = document.getElementById("takeoffBtn");
@@ -214,6 +216,9 @@
     const FIREWORK_COLORS = ["#ff4757", "#ffa502", "#ffd32a", "#2ed573", "#1e90ff", "#a55eea", "#ff6fcf", "#ffffff"]; // bright firework colours
     let vines = [];      // carnivorous vines that grab, shrink & drag things under a surface
     const VINE_REACH = 130, VINE_DETECT = 155, VINE_GROW = 0.07, VINE_EAT_TIME = 75; // reach / sense / grow speed / how SLOWLY it shrinks & grays (bigger = slower)
+    let dishes = [];     // satellite dishes that zap things into liquid and slurp it up (walls & ceiling only)
+    let goo = [];        // liquid blobs flying back into a dish
+    const DISH_RANGE = 340, DISH_ZAP_TIME = 70, DISH_SUCK = 0.6; // reach / how long to liquefy / how hard it slurps
     const VIRUS_FLOAT = 0.6;                     // a phage has NO gravity — it slowly floats toward a host (~1 block/sec)
     const VIRUS_STARVE = 600;                    // a phage with no food for this many frames (~10s) pops on its own
     const GUM_SPLAT_W = 48, GUM_SPLAT_H = 14;    // a gumball splat: pancake-flat, a little bigger than a base block (40)
@@ -441,6 +446,7 @@
       bits = [];
       sparks = [];
       vines = [];
+      dishes = []; goo = [];
       sticky = false;
       held = null;
       stickBtn.textContent = "🔗 STICK";
@@ -1114,6 +1120,7 @@
       squareBtn.classList.toggle("active", m === "spawn" && spawnKind === "block");
       bucketBtn.classList.toggle("active", m === "bucket");
       vineBtn.classList.toggle("active", m === "vine");
+      dishBtn.classList.toggle("active", m === "dish");
       vacBtn.classList.toggle("active", m === "vacuum");
       needleBtn.classList.toggle("active", m === "needle");
       canvas.style.cursor = (m === "grab") ? "grab" : ((m === "spawn") ? "copy" : ((m === "vacuum" || m === "needle" || m === "bucket") ? "crosshair" : "default"));
@@ -1153,6 +1160,7 @@
     needleBtn.addEventListener("click", () => setMode("needle"));
     bucketBtn.addEventListener("click", () => setMode("bucket"));
     vineBtn.addEventListener("click", () => setMode("vine"));
+    dishBtn.addEventListener("click", () => setMode("dish"));
     function toggleCannibal() { cannibalism = !cannibalism; cannibalBtn.classList.toggle("active", cannibalism); }
     cannibalBtn.addEventListener("click", toggleCannibal);
     function doTakeoff() { for (const b of blocks) if ((b.kind === "flyingplane" || b.kind === "flyinghelicopter") && (b.fuel || 0) > 0) { b.flying = true; b.landing = false; if (b.kind === "flyinghelicopter") b.takingoff = 90; } }
@@ -1227,6 +1235,17 @@
       vines.push({ x: vx, y: vy, dir: dir, state: "idle", len: 0, grab: null, target: null, sway: Math.random() * 10 });
     }
 
+    // stick a satellite dish on the nearest WALL or CEILING (never the floor); it points into the room
+    function placeDish(px, py) {
+      const dT = py, dL = px, dR = W - px;   // ceiling, left wall, right wall
+      const m = Math.min(dT, dL, dR);
+      let x, y, dir;
+      if (m === dL) { x = 0; y = py; dir = { x: 1, y: 0 }; }        // left wall  -> aims right
+      else if (m === dR) { x = W; y = py; dir = { x: -1, y: 0 }; }  // right wall -> aims left
+      else { x = px; y = 0; dir = { x: 0, y: 1 }; }                 // ceiling    -> aims down
+      dishes.push({ x: x, y: y, dir: dir, state: "scan", target: null });
+    }
+
     // shared pointer logic — used by BOTH mouse and touch
     function pointerPress(x, y) {
       mouse.x = x; mouse.y = y;
@@ -1268,6 +1287,8 @@
         }
       } else if (mode === "vine") {
         plantVine(x, y);
+      } else if (mode === "dish") {
+        placeDish(x, y);
       } else {
         let best = null, bestDist = 50;
         for (const b of blocks) {
@@ -1382,6 +1403,7 @@
       { icon: "👻", act: () => setMode("spawn", "soul") },
       { icon: "🧽", act: () => setMode("spawn", "sponge") },
       { icon: "🌿", act: () => setMode("vine") },
+      { icon: "📡", act: () => setMode("dish") },
       { icon: "⬛", act: () => setMode("spawn", "entity") },
       { icon: "🦠", act: () => setMode("spawn", "virus") },
       { icon: "🔴", act: () => setMode("spawn", "gumballmachine") },
@@ -1738,6 +1760,16 @@
             if (cx < -60 || cx > W + 60 || cy < -60 || cy > H + 60) { b.dead = true; if (v.grab === b) v.grab = null; }
           }
           b.vx = 0; b.vy = 0; b.spin = 0;
+          continue;
+        }
+        if (b.zapped) { // caught in a dish beam: freeze and melt down to nothing
+          const z = b.zapped;
+          z.t++;
+          const p = Math.min(1, z.t / DISH_ZAP_TIME);
+          b.w = z.w0 * (1 - p * 0.92); b.h = z.h0 * (1 - p * 0.92); // shrink away
+          b.x = z.cx - b.w / 2; b.y = z.cy - b.h / 2;
+          b.vx = 0; b.vy = 0; b.spin = 0;
+          if (p >= 1) z.done = true;
           continue;
         }
         if (b.infected) { // DNA injected: swell toward 2x size, then POP into pieces + baby viruses
@@ -2444,6 +2476,48 @@
       }
       vines = vines.filter(v => !v.gone); // clear out used-up vines
 
+      // ===== SATELLITE DISHES: zap a thing into liquid, then slurp the liquid back in =====
+      for (const d of dishes) {
+        if (d.state === "scan") {
+          let best = null, bd = DISH_RANGE;
+          for (const b of blocks) {
+            if (b.dead || b.vined || b.captured || b.zapped) continue;
+            if (b.kind === "water" || b.kind === "lava" || b.kind === "coladrop") continue;
+            const ox = (b.x + b.w / 2) - d.x, oy = (b.y + b.h / 2) - d.y;
+            if (ox * d.dir.x + oy * d.dir.y < 4) continue; // must be on the inward side of the surface
+            const dd = Math.hypot(ox, oy);
+            if (dd < bd) { bd = dd; best = b; }
+          }
+          if (best) { best.zapped = { t: 0, w0: best.w, h0: best.h, cx: best.x + best.w / 2, cy: best.y + best.h / 2, done: false }; d.target = best; d.state = "zap"; }
+        } else if (d.state === "zap") {
+          const t = d.target;
+          if (!t || t.dead || !t.zapped) { d.target = null; d.state = "scan"; }
+          else if (t.zapped.done) {
+            // LIQUEFY! burst into goo — the more stuff in the world, the more liquid pours out
+            const col = injectColorFor(t), cx = t.x + t.w / 2, cy = t.y + t.h / 2;
+            const n = Math.min(45, 6 + Math.round(blocks.length * 1.5));
+            for (let i = 0; i < n; i++) {
+              const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 2.5;
+              goo.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, color: col, dish: d, size: 4 + Math.random() * 4 });
+            }
+            t.dead = true; t.zapped = null; d.target = null; d.state = "suck";
+            playPop(4);
+          }
+        } else if (d.state === "suck") {
+          if (!goo.some(g => g.dish === d)) d.state = "scan"; // all slurped — ready for the next thing
+        }
+      }
+
+      // liquid goo flies back toward its dish and vanishes when it arrives
+      for (const g of goo) {
+        const dx = g.dish.x - g.x, dy = g.dish.y - g.y, dd = Math.hypot(dx, dy) || 1;
+        g.vx += (dx / dd) * DISH_SUCK; g.vy += (dy / dd) * DISH_SUCK;
+        g.vx *= 0.92; g.vy *= 0.92;
+        g.x += g.vx; g.y += g.vy;
+        if (dd < 14) g.gone = true; // slurped into the dish
+      }
+      goo = goo.filter(g => !g.gone);
+
       // age the cola drops and water droplets so they fade after their time is up
       for (const b of blocks) {
         if (b.life !== undefined && --b.life <= 0) b.dead = true;
@@ -2610,6 +2684,41 @@
         }
       }
     }
+
+    function drawDishes() {
+      // the liquid blobs zooming back into their dishes
+      for (const g of goo) {
+        ctx.fillStyle = g.color;
+        ctx.beginPath(); ctx.arc(g.x, g.y, g.size / 2, 0, Math.PI * 2); ctx.fill();
+      }
+      for (const d of dishes) {
+        const along = { x: -d.dir.y, y: d.dir.x };     // direction ALONG the surface
+        const bx = d.x + d.dir.x * 8, by = d.y + d.dir.y * 8; // dish sits a little off the wall
+        // the ZAP beam (drawn behind the dish)
+        if (d.state === "zap" && d.target) {
+          const tx = d.target.x + d.target.w / 2, ty = d.target.y + d.target.h / 2;
+          ctx.strokeStyle = "rgba(120,230,255,0.85)"; ctx.lineWidth = 6; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
+          ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
+        }
+        // mount + arm
+        ctx.strokeStyle = "#7f8c9b"; ctx.lineWidth = 4; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(bx, by); ctx.stroke();
+        // the dish bowl (an arc facing into the room)
+        const ang = Math.atan2(d.dir.y, d.dir.x);
+        ctx.fillStyle = "#d7dde3"; ctx.strokeStyle = "#9aa6b2"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(bx, by, 16, ang - 1.5, ang + 1.5); ctx.stroke();
+        ctx.beginPath(); ctx.arc(bx, by, 16, ang - 1.5, ang + 1.5);
+        ctx.lineTo(bx, by); ctx.closePath(); ctx.fillStyle = "rgba(215,221,227,0.5)"; ctx.fill();
+        // feed horn at the focus
+        ctx.fillStyle = "#e74c3c";
+        ctx.beginPath(); ctx.arc(bx + d.dir.x * 9, by + d.dir.y * 9, 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#7f8c9b"; // little base pads on the wall
+        ctx.fillRect(d.x + along.x * -8 - 2, d.y + along.y * -8 - 2, 4, 4);
+        ctx.fillRect(d.x + along.x * 8 - 2, d.y + along.y * 8 - 2, 4, 4);
+      }
+    }
     function draw() {
       ctx.clearRect(0, 0, W, H);
       ctx.save();
@@ -2774,6 +2883,8 @@
         ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
       }
       ctx.globalAlpha = 1;
+
+      drawDishes(); // satellite dishes, their beams, and the liquid getting slurped in
 
       // gravity gun beam
       if (held && held.kind === "gravgun" && held.beamHold) {
