@@ -562,7 +562,7 @@
       if (kind === "gumballmachine") { w = 46; h = 68; mass = 6; } // click it to dispense gumballs
       if (kind === "gumball") { w = 18; h = 18; mass = 0.6; }       // a pink ball; splats into a pink pancake on contact
       if (kind === "firework") { w = 10; h = 22; mass = 0.5; }      // a rocket that flies up and bursts into sparks
-      if (kind === "satellite") { w = 40; h = 30; mass = 0.6; }     // a flying dish that zaps things into liquid
+      if (kind === "satellite") { w = 52; h = 26; mass = 0.6; }     // a flying dish that zaps things into liquid
       const sm = sizeMult[kind] || 1; w *= sm; h *= sm; // MODEL editor per-asset size
       const obj = {
         x: x - w / 2, y: y - h / 2, w, h,
@@ -2873,12 +2873,22 @@
           ctx.beginPath(); ctx.moveTo(-b.w / 2, -b.h * 0.3); ctx.lineTo(0, -b.h * 0.6); ctx.lineTo(b.w / 2, -b.h * 0.3); ctx.closePath(); ctx.fill(); // nose cone
           ctx.fillStyle = "#ffd24a"; ctx.beginPath(); ctx.arc(0, b.h * 0.5, b.w * 0.45, 0, Math.PI * 2); ctx.fill(); // flame at the tail
         } else if (b.kind === "satellite") {
-          ctx.fillStyle = "#c0c6cc"; ctx.beginPath(); ctx.ellipse(0, b.h * 0.12, b.w / 2, b.h * 0.34, 0, 0, Math.PI * 2); ctx.fill(); // saucer
-          ctx.fillStyle = "#9aa6b2"; ctx.beginPath(); ctx.ellipse(0, -b.h * 0.05, b.w * 0.28, b.h * 0.32, 0, 0, Math.PI * 2); ctx.fill(); // dome
-          ctx.fillStyle = "#78e6ff"; ctx.beginPath(); ctx.arc(0, -b.h * 0.08, b.w * 0.12, 0, Math.PI * 2); ctx.fill(); // eye
-          ctx.fillStyle = "#e74c3c";
-          ctx.beginPath(); ctx.arc(-b.w * 0.3, b.h * 0.14, 2.5, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(b.w * 0.3, b.h * 0.14, 2.5, 0, Math.PI * 2); ctx.fill();
+          const bw = b.w, bh = b.h;
+          const panelW = bw * 0.3, panelH = bh * 0.82, gap = bw * 0.14;
+          for (const s of [-1, 1]) {              // two solar-panel wings
+            const px = s * (gap + panelW / 2 + bw * 0.08);
+            ctx.strokeStyle = "#b9c2cc"; ctx.lineWidth = 2;  // arm to the body
+            ctx.beginPath(); ctx.moveTo(s * gap, 0); ctx.lineTo(px - s * panelW / 2, 0); ctx.stroke();
+            ctx.fillStyle = "#2b5bd4"; ctx.fillRect(px - panelW / 2, -panelH / 2, panelW, panelH); // blue panel
+            ctx.strokeStyle = "#17306e"; ctx.lineWidth = 1;  // grid lines
+            for (let c = 1; c < 3; c++) { const gx = px - panelW / 2 + panelW * c / 3; ctx.beginPath(); ctx.moveTo(gx, -panelH / 2); ctx.lineTo(gx, panelH / 2); ctx.stroke(); }
+            for (let r = 1; r < 4; r++) { const gy = -panelH / 2 + panelH * r / 4; ctx.beginPath(); ctx.moveTo(px - panelW / 2, gy); ctx.lineTo(px + panelW / 2, gy); ctx.stroke(); }
+          }
+          ctx.fillStyle = "#e0b43a"; ctx.fillRect(-bw * 0.14, -bh * 0.45, bw * 0.28, bh * 0.9); // gold foil body
+          ctx.strokeStyle = "#a8821f"; ctx.lineWidth = 1; ctx.strokeRect(-bw * 0.14, -bh * 0.45, bw * 0.28, bh * 0.9);
+          ctx.fillStyle = "#f2e3a0"; ctx.fillRect(-bw * 0.14, -bh * 0.12, bw * 0.28, bh * 0.1); // foil shine stripe
+          ctx.fillStyle = "#e8edf2"; ctx.beginPath(); ctx.ellipse(0, -bh * 0.56, bw * 0.1, bh * 0.16, 0, 0, Math.PI * 2); ctx.fill(); // dish antenna
+          ctx.strokeStyle = "#9aa6b2"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, -bh * 0.56); ctx.lineTo(0, -bh * 0.42); ctx.stroke();
         } else {
           ctx.fillStyle = b.color;
           ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
