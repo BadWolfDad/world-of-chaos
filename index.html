@@ -1999,7 +1999,9 @@
             else if (t.zapped.done) {
               const col = injectColorFor(t), cx = t.x + t.w / 2, cy = t.y + t.h / 2;
               const n = Math.min(45, 6 + Math.round(blocks.length * 1.5));
-              for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 2.5; goo.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, color: col, dish: b, size: 4 + Math.random() * 4 }); }
+              let dest = b, dd = Infinity; // if there's a wall/roof dish on the map, send the liquid to the CLOSEST one
+              for (const d of dishes) { const gap = Math.hypot(d.x - cx, d.y - cy); if (gap < dd) { dd = gap; dest = d; } }
+              for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 2.5; goo.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, color: col, dish: dest, size: 4 + Math.random() * 4 }); }
               t.dead = true; t.zapped = null; b.satTarget = null; b.satState = "suck"; playPop(4);
             }
           } else if (b.satState === "suck") {
